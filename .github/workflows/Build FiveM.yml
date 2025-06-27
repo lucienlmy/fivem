@@ -25,6 +25,7 @@ jobs:
         node-version: '18'
 
     - name: Run prebuild script
+      shell: cmd
       run: prebuild.cmd
 
     - name: Build with MSBuild
