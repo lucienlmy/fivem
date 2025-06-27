@@ -32,8 +32,9 @@ jobs:
       shell: cmd
       run: prebuild.cmd
 
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
     - name: Build with MSBuild
       shell: cmd
-      run: |
-        "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat"
-        msbuild code/fivem.sln /p:Configuration=Release /p:Platform=x64 /m
+      run: msbuild code/fivem.sln /p:Configuration=Release /p:Platform=x64 /m
