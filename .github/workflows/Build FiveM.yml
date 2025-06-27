@@ -32,6 +32,10 @@ jobs:
       shell: cmd
       run: prebuild.cmd
 
+    - name: List all sln files
+      shell: cmd
+      run: dir /s /b *.sln
+
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
 
