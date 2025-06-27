@@ -1,0 +1,32 @@
+name: Build FiveM
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Run prebuild script
+      run: prebuild.cmd
+
+    - name: Build with MSBuild
+      run: |
+        msbuild code/fivem.sln /p:Configuration=Release /p:Platform=x64 /m
