@@ -18,6 +18,14 @@ jobs:
     - name: Ensure all submodules are initialized
       run: git submodule update --init --recursive
 
+    - name: List repo root directory (debug)
+      shell: cmd
+      run: dir
+
+    - name: List tools directory (debug)
+      shell: cmd
+      run: dir tools
+
     - name: Setup Python 3.10
       uses: actions/setup-python@v5
       with:
@@ -34,10 +42,39 @@ jobs:
     - name: Ensure Yarn is installed
       run: npm install -g yarn
 
+    # 可选：如依赖 msys2, 可取消注释
+    # - name: Install MSYS2
+    #   uses: msys2/setup-msys2@v2
+    #   with:
+    #     update: true
+
     - name: Run prebuild script
       shell: cmd
       run: prebuild
 
-    - name: List tools/fxd directory
+    - name: List tools/fxd directory (debug)
       shell: cmd
       run: dir tools\fxd
+
+    - name: Download Chrome for build
+      shell: cmd
+      run: tools\fxd\fxd.exe get-chrome
+
+    - name: Generate code for FiveM
+      shell: cmd
+      run: tools\fxd\fxd.exe gen -game five
+
+    - name: Generate Visual Studio solution
+      shell: cmd
+      run: tools\fxd\fxd.exe vs -game five
+
+    - name: List all sln files (debug)
+      shell: cmd
+      run: dir /s /b *.sln
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Build with MSBuild (FiveM)
+      shell: cmd
+      run: msbuild code\fivem.sln /p:Configuration=Release /p:Platform=x64 /m
