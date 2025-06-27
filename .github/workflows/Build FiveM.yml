@@ -18,14 +18,6 @@ jobs:
     - name: Ensure all submodules are initialized
       run: git submodule update --init --recursive
 
-    - name: List repo root directory (debug)
-      shell: cmd
-      run: dir
-
-    - name: List tools directory (debug)
-      shell: cmd
-      run: dir tools
-
     - name: Setup Python 3.10
       uses: actions/setup-python@v5
       with:
@@ -42,15 +34,13 @@ jobs:
     - name: Ensure Yarn is installed
       run: npm install -g yarn
 
-    # 可选：如依赖 msys2, 可取消注释
-    # - name: Install MSYS2
-    #   uses: msys2/setup-msys2@v2
-    #   with:
-    #     update: true
-
     - name: Run prebuild script
       shell: cmd
       run: prebuild
+
+    - name: Build fxd.exe using fxd.ps1
+      shell: pwsh
+      run: ./fxd.ps1
 
     - name: List tools/fxd directory (debug)
       shell: cmd
