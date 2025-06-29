@@ -1,7 +1,8 @@
-name: CI Build all products
+name: CI Build all products222
 
 on:
   workflow_call:
+  workflow_dispatch:
 
 permissions:
   packages: read
