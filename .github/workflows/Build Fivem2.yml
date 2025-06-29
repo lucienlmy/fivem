@@ -1,0 +1,70 @@
+name: Build FiveM
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repo with submodules
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Ensure all submodules are initialized
+      run: git submodule update --init --recursive
+
+    - name: Setup Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install setuptools (for distutils)
+      run: python -m pip install --upgrade pip setuptools
+
+    - name: Setup Node.js 18.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Ensure Yarn is installed
+      run: npm install -g yarn
+
+    - name: Run prebuild script
+      shell: cmd
+      run: prebuild
+
+    - name: Build fxd.exe using fxd.ps1
+      shell: pwsh
+      run: ./fxd.ps1
+
+    - name: List tools/fxd directory (debug)
+      shell: cmd
+      run: dir tools\fxd
+
+    - name: Download Chrome for build
+      shell: cmd
+      run: tools\fxd\fxd.exe get-chrome
+
+    - name: Generate code for FiveM
+      shell: cmd
+      run: tools\fxd\fxd.exe gen -game five
+
+    - name: Generate Visual Studio solution
+      shell: cmd
+      run: tools\fxd\fxd.exe vs -game five
+
+    - name: List all sln files (debug)
+      shell: cmd
+      run: dir /s /b *.sln
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Build with MSBuild (FiveM)
+      shell: cmd
+      run: msbuild code\fivem.sln /p:Configuration=Release /p:Platform=x64 /m
