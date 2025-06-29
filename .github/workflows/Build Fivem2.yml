@@ -34,13 +34,18 @@ jobs:
     - name: Ensure Yarn is installed
       run: npm install -g yarn
 
-    - name: Run prebuild script
-      shell: cmd
-      run: prebuild
+    - name: Ensure fxd.ps1 is executable
+      shell: pwsh
+      run: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
     - name: Build fxd.exe using fxd.ps1
       shell: pwsh
-      run: ./fxd.ps1
+      run: |
+        ./fxd.ps1 -Verbose
+        if (!(Test-Path tools\fxd\fxd.exe)) {
+          Write-Error "fxd.exe not found after running fxd.ps1"
+          exit 1
+        }
 
     - name: List tools/fxd directory (debug)
       shell: cmd
