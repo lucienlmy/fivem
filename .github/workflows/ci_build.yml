@@ -1,4 +1,4 @@
-name: CI Build all products222
+name: CI Build all products
 
 on:
   workflow_call:
@@ -12,10 +12,9 @@ jobs:
     strategy:
       matrix:
         builds:
-          - [ FiveM,  five,   windows ]
-          - [ RedM,   rdr3,   windows ]
-          - [ Server, server, windows ]
-          # 只保留 windows 平台
+          - [ FiveM,  five,   x64 ]
+          - [ RedM,   rdr3,   x64 ]
+          - [ Server, server, x64 ]
     name: ${{ matrix.builds[0] }}
     runs-on: windows-latest
     env:
@@ -52,6 +51,5 @@ jobs:
             Write-Error "$buildScript not found!"
             exit 1
           }
-          # 强制用 x64 作为 MSBuild 平台
-          $env:MSBUILD_PLATFORM = "x64"
-          bash $buildScript "$env:ROOT_DEP" $env:JOB_SLOTS $env:MSBUILD_PLATFORM
+          # 传递 x64 给 build_windows.sh
+          bash $buildScript "$env:ROOT_DEP" $env:JOB_SLOTS $env:PLATFORM
