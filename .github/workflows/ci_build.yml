@@ -2,7 +2,6 @@ name: CI Build all products
 
 on:
   workflow_call:
-  workflow_dispatch:
 
 permissions:
   packages: read
@@ -15,23 +14,22 @@ jobs:
           - [ FiveM,  five,   windows ]
           - [ RedM,   rdr3,   windows ]
           - [ Server, server, windows ]
-          - [ Server, server, linux   ]
-    name: ${{ matrix.builds[0] }}${{ matrix.builds[2] == 'linux' && ' (Linux)' || '' }}
-    runs-on: ${{ matrix.builds[2] == 'windows' && 'windows-latest' || 'ubuntu-24.04' }}
+          # 已去除 linux 平台
+    name: ${{ matrix.builds[0] }}
+    runs-on: windows-latest
     env:
       PROGRAM: ${{ matrix.builds[1] }}
-      PLATFORM: ${{ matrix.builds[2] }}      
+      PLATFORM: ${{ matrix.builds[2] }}
     steps:
       - name: Checkout
         shell: bash
         run: |          
           # Settings
           #  - Windows: D is too small, C is big enough, checkout action doesn't allow this.
-          [[ $PLATFORM = windows ]] && ROOT="C:\b" || ROOT=~/b
+          ROOT="C:\b"
           ROOT_REPO="$ROOT/$PROGRAM"
           ROOT_DEP="$ROOT/dep"
-          JOB_SLOTS=$(nproc --all);
-          #JOB_SLOTS=$((JOB_SLOTS * 2)) # can cause heap allocation issues on Windows
+          JOB_SLOTS=2
           
           # Share with other steps
           echo "ROOT_REPO=$ROOT_REPO" >> "$GITHUB_ENV"
@@ -47,27 +45,19 @@ jobs:
           git remote add origin ${{github.event.pull_request.head.repo.clone_url}}
           git pull origin ${{github.event.pull_request.head.ref}} --depth=1
           git submodule update --jobs=$JOB_SLOTS --init --depth=1
-        
+      
       - name: Dependencies
         shell: bash
         run: |
           mkdir -p "$ROOT_DEP" && cd "$_" || exit 1
       
-      - name: Log in to the Container registry
-        if: ${{ matrix.builds[2] == 'linux' }}
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Compile
         shell: bash
         run: |
           cd "$ROOT_REPO"
           
           # messes with current build tools, so clear it
-          BUILD_SCRIPT=".github/workflows/ci/build_$PLATFORM.sh"
+          BUILD_SCRIPT=".github/workflows/ci/build_windows.sh"
           PLATFORM= # clear out, some other scripts consider this variable
           
           chmod +x "$BUILD_SCRIPT"
