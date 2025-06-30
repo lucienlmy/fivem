@@ -53,8 +53,45 @@ jobs:
           }
           bash $buildScript "$env:ROOT_DEP" $env:JOB_SLOTS $env:PLATFORM
 
-      - name: Upload FiveM.exe as artifact
+      - name: List all files under project root and save to all_files.txt
+        shell: pwsh
+        run: |
+          Write-Host "==== All files under $env:ROOT_REPO ===="
+          Get-ChildItem -Path $env:ROOT_REPO -Recurse | ForEach-Object {
+            Write-Host $_.FullName
+          }
+          Get-ChildItem -Path $env:ROOT_REPO -Recurse | Select-Object -ExpandProperty FullName | Set-Content "$env:GITHUB_WORKSPACE\all_files.txt"
+
+      - name: List all exe files under project root and save to all_exe_files.txt
+        shell: pwsh
+        run: |
+          Write-Host "==== All .exe files under $env:ROOT_REPO ===="
+          $exeFiles = Get-ChildItem -Path $env:ROOT_REPO -Recurse -Filter *.exe
+          foreach ($file in $exeFiles) {
+            Write-Host $file.FullName
+          }
+          $exeFiles | Select-Object -ExpandProperty FullName | Set-Content "$env:GITHUB_WORKSPACE\all_exe_files.txt"
+
+      - name: Try uploading FiveM.exe from absolute path
+        id: try_direct_upload
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.builds[0] }}-FiveM-exe
-          path: five/code/bin/five/release/FiveM.exe
+          path: C:\b\five\code\bin\five\release\FiveM.exe
+
+      - name: Fallback: Copy FiveM.exe to workspace if direct upload failed
+        if: steps.try_direct_upload.outcome == 'failure'
+        shell: pwsh
+        run: |
+          $src = "C:\b\five\code\bin\five\release\FiveM.exe"
+          $dstDir = "$env:GITHUB_WORKSPACE\artifact_output"
+          New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
+          Copy-Item $src $dstDir -Force
+
+      - name: Fallback: Upload FiveM.exe from workspace if needed
+        if: steps.try_direct_upload.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.builds[0] }}-FiveM-exe
+          path: artifact_output/FiveM.exe
