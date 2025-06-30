@@ -53,16 +53,10 @@ jobs:
           }
           bash $buildScript "$env:ROOT_DEP" $env:JOB_SLOTS $env:PLATFORM
 
-      - name: List build output files
+      - name: Find all exe files after build
         shell: pwsh
         run: |
-          Write-Host "Listing all files in $env:ROOT_REPO\code\build\five"
-          Get-ChildItem -Path "$env:ROOT_REPO\code\build\five" -Recurse | ForEach-Object {
+          Write-Host "==== All .exe files under $env:ROOT_REPO ===="
+          Get-ChildItem -Path $env:ROOT_REPO -Recurse -Filter *.exe | ForEach-Object {
             Write-Host $_.FullName
           }
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.builds[0] }}-output
-          path: ${{ env.ROOT_REPO }}\code\build\five\
