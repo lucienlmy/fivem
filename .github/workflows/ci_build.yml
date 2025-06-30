@@ -72,8 +72,11 @@ jobs:
           }
           $exeFiles | Select-Object -ExpandProperty FullName | Set-Content "$env:GITHUB_WORKSPACE\all_exe_files.txt"
 
-      - name: Upload FiveM.exe as artifact
+      - name: Upload all found exe files and file lists as artifact (absolute path)
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.builds[0] }}-FiveM-exe
-          path: C:\b\five\code\bin\five\release\FiveM.exe
+          name: ${{ matrix.builds[0] }}-exe-and-list
+          path: |
+            ${{ env.GITHUB_WORKSPACE }}\all_files.txt
+            ${{ env.GITHUB_WORKSPACE }}\all_exe_files.txt
+            C:\b\${{ matrix.builds[1] }}\code\bin\${{ matrix.builds[1] }}\release\*.exe
