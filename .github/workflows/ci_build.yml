@@ -72,11 +72,28 @@ jobs:
           }
           $exeFiles | Select-Object -ExpandProperty FullName | Set-Content "$env:GITHUB_WORKSPACE\all_exe_files.txt"
 
-      - name: Upload all found exe files and file lists as artifact (absolute path)
+      - name: Collect all exe files and file lists to artifact_output
+        shell: pwsh
+        run: |
+          $artifactDir = "$env:GITHUB_WORKSPACE\artifact_output"
+          New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+          # 复制清单文件
+          Copy-Item "$env:GITHUB_WORKSPACE\all_files.txt" $artifactDir -Force
+          Copy-Item "$env:GITHUB_WORKSPACE\all_exe_files.txt" $artifactDir -Force
+          # 复制所有exe
+          $exeFiles = Get-Content "$env:GITHUB_WORKSPACE\all_exe_files.txt"
+          foreach ($exe in $exeFiles) {
+            if (Test-Path $exe) {
+              Copy-Item $exe $artifactDir -Force
+            } else {
+              Write-Host "Not found: $exe"
+            }
+          }
+          Write-Host "Files in artifact_output:"
+          Get-ChildItem $artifactDir
+
+      - name: Upload all found exe files and file lists as artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.builds[0] }}-exe-and-list
-          path: |
-            ${{ env.GITHUB_WORKSPACE }}\all_files.txt
-            ${{ env.GITHUB_WORKSPACE }}\all_exe_files.txt
-            C:\b\${{ matrix.builds[1] }}\code\bin\${{ matrix.builds[1] }}\release\*.exe
+          path: ${{ env.GITHUB_WORKSPACE }}/artifact_output/*
