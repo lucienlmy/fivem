@@ -51,5 +51,18 @@ jobs:
             Write-Error "$buildScript not found!"
             exit 1
           }
-          # 传递 x64 给 build_windows.sh
           bash $buildScript "$env:ROOT_DEP" $env:JOB_SLOTS $env:PLATFORM
+
+      - name: List build output files
+        shell: pwsh
+        run: |
+          Write-Host "Listing all files in $env:ROOT_REPO\code\build\five"
+          Get-ChildItem -Path "$env:ROOT_REPO\code\build\five" -Recurse | ForEach-Object {
+            Write-Host $_.FullName
+          }
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.builds[0] }}-output
+          path: ${{ env.ROOT_REPO }}\code\build\five\
