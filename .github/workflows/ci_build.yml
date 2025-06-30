@@ -85,11 +85,15 @@ jobs:
           foreach ($exe in $exeFiles) {
             if (Test-Path $exe) {
               Copy-Item $exe $artifactDir -Force
+            } else {
+              Write-Host "Not found: $exe"
             }
           }
+          Write-Host "Files in artifact_output:"
+          Get-ChildItem $artifactDir
 
       - name: Upload all found exe files and file lists as artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.builds[0] }}-exe-and-list
-          path: ${{ env.GITHUB_WORKSPACE }}\artifact_output\*
+          path: ${{ env.GITHUB_WORKSPACE }}/artifact_output/*
