@@ -74,11 +74,11 @@ jobs:
 
       - name: Try uploading FiveM.exe from absolute path
         id: try_direct_upload
-        continue-on-error: true
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: ${{ matrix.builds[0] }}-FiveM-exe
-          path: C:\b\five\code\bin\five\release\FiveM.exe
+          path: 'C:\b\five\code\bin\five\release\FiveM.exe'
 
       - name: Fallback: Copy FiveM.exe to workspace if direct upload failed
         if: steps.try_direct_upload.outcome == 'failure'
