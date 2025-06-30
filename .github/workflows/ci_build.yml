@@ -82,15 +82,48 @@ jobs:
           Copy-Item "$env:GITHUB_WORKSPACE\all_exe_files.txt" $artifactDir -Force
           # 复制所有exe
           $exeFiles = Get-Content "$env:GITHUB_WORKSPACE\all_exe_files.txt"
+          $foundExe = 0
           foreach ($exe in $exeFiles) {
             if (Test-Path $exe) {
               Copy-Item $exe $artifactDir -Force
+              $foundExe++
             } else {
               Write-Host "Not found: $exe"
             }
           }
           Write-Host "Files in artifact_output:"
           Get-ChildItem $artifactDir
+          # 标记有无exe文件
+          "$foundExe" | Set-Content "$artifactDir\found_exe_count.txt"
+
+      - name: Check and fallback to only uploading FiveM release exe if needed
+        id: fallback
+        shell: pwsh
+        run: |
+          $artifactDir = "$env:GITHUB_WORKSPACE\artifact_output"
+          $foundExeCountFile = "$artifactDir\found_exe_count.txt"
+          $exeCount = 0
+          if (Test-Path $foundExeCountFile) {
+            $exeCount = Get-Content $foundExeCountFile
+          }
+          if ([int]$exeCount -eq 0) {
+            Write-Host "No exe files collected, fallback to FiveM release directory."
+            $fivemReleaseDir = "$env:ROOT_REPO\code\bin\five\release"
+            $fivemExeFiles = @()
+            if (Test-Path $fivemReleaseDir) {
+              $fivemExeFiles = Get-ChildItem -Path $fivemReleaseDir -Filter *.exe | Select-Object -ExpandProperty FullName
+              foreach ($exe in $fivemExeFiles) {
+                Copy-Item $exe $artifactDir -Force
+              }
+              $fivemExeFiles | Set-Content "$artifactDir\fivem_release_exe.txt"
+              Write-Host "Files fallback-copied to artifact_output:"
+              Get-ChildItem $artifactDir
+            } else {
+              Write-Host "FiveM release directory not found!"
+            }
+          } else {
+            Write-Host "Exe files already collected, no fallback needed."
+          }
 
       - name: Upload all found exe files and file lists as artifact
         uses: actions/upload-artifact@v4
