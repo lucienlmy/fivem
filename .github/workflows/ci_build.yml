@@ -53,10 +53,31 @@ jobs:
           }
           bash $buildScript "$env:ROOT_DEP" $env:JOB_SLOTS $env:PLATFORM
 
-      - name: Find all exe files after build
+      - name: List all files under project root and save to all_files.txt
+        shell: pwsh
+        run: |
+          Write-Host "==== All files under $env:ROOT_REPO ===="
+          Get-ChildItem -Path $env:ROOT_REPO -Recurse | ForEach-Object {
+            Write-Host $_.FullName
+          }
+          Get-ChildItem -Path $env:ROOT_REPO -Recurse | Select-Object -ExpandProperty FullName | Set-Content "$env:GITHUB_WORKSPACE\all_files.txt"
+
+      - name: List all exe files under project root and save to all_exe_files.txt
         shell: pwsh
         run: |
           Write-Host "==== All .exe files under $env:ROOT_REPO ===="
-          Get-ChildItem -Path $env:ROOT_REPO -Recurse -Filter *.exe | ForEach-Object {
-            Write-Host $_.FullName
+          $exeFiles = Get-ChildItem -Path $env:ROOT_REPO -Recurse -Filter *.exe
+          foreach ($file in $exeFiles) {
+            Write-Host $file.FullName
           }
+          $exeFiles | Select-Object -ExpandProperty FullName | Set-Content "$env:GITHUB_WORKSPACE\all_exe_files.txt"
+
+      - name: Upload all found exe files and file lists as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.builds[0] }}-exe-and-list
+          path: |
+            ${{ env.GITHUB_WORKSPACE }}\all_files.txt
+            ${{ env.GITHUB_WORKSPACE }}\all_exe_files.txt
+            # 下面这行可以上传所有exe（如果没有则不会报错）
+            !include: ${{ env.GITHUB_WORKSPACE }}\all_exe_files.txt
