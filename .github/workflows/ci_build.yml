@@ -81,7 +81,7 @@ jobs:
         continue-on-error: true
 
       - name: Fallback: Copy FiveM.exe to workspace if direct upload failed
-        if: failure() && steps.try_direct_upload.outcome == 'failure'
+        if: steps.try_direct_upload.outcome == 'failure'
         shell: pwsh
         run: |
           $src = "C:\b\five\code\bin\five\release\FiveM.exe"
@@ -90,7 +90,7 @@ jobs:
           Copy-Item $src $dstDir -Force
 
       - name: Fallback: Upload FiveM.exe from workspace if needed
-        if: failure() && steps.try_direct_upload.outcome == 'failure'
+        if: steps.try_direct_upload.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.builds[0] }}-FiveM-exe
