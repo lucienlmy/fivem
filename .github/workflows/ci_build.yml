@@ -97,3 +97,10 @@ jobs:
         with:
           name: ${{ matrix.builds[0] }}-exe-and-list
           path: artifact_output/*
+
+      - name: Upload all files under project root (保持原始目录结构)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.builds[0] }}-all-root-files
+          path: |
+            ${{ env.ROOT_REPO }}/**
