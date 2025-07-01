@@ -1,9 +1,12 @@
-name: Build FiveM
+name: Build FiveM2
 
 on:
-  push:
+  #push:
     #branches: [ master ]
-  pull_request:
+  #pull_request:
+  
+  workflow_call:
+  workflow_dispatch:
 
 jobs:
   build:
