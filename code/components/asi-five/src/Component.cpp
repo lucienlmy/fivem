@@ -104,7 +104,7 @@ bool ComponentInstance::DoGameLoad(void* module)
 
 		std::vector<std::wstring> blacklistedAsis = std::vector<std::wstring>({
 			L"openiv.asi",
-			L"scripthookvdotnet.asi",
+			//L"scripthookvdotnet.asi",
 			L"fspeedometerv.asi"
 		});
 
@@ -136,6 +136,8 @@ bool ComponentInstance::DoGameLoad(void* module)
 		{
 			if (it->path().extension() == ".asi")
 			{
+				trace("Found ASI plugin: %s\n", it->path().filename().string().c_str()); // 新增：发现ASI
+
 				bool bad = false;
 				std::wstring badFileName;
 				std::vector<uint8_t> libraryBuffer;
@@ -156,7 +158,8 @@ bool ComponentInstance::DoGameLoad(void* module)
 					}
 				}
 
-				if (xbr::IsGameBuildOrGreater<2189>())
+				#pragma region 版本号阻止加载
+				/* if (xbr::IsGameBuildOrGreater<2189>())
 				{
 					bad = true;
 
@@ -190,7 +193,8 @@ bool ComponentInstance::DoGameLoad(void* module)
 							xbr::GetGameBuild()
 						);
 					}
-				}
+				} */
+				#pragma endregion
 
 				if (LoadPEFile(it->path(), libraryBuffer))
 				{
@@ -260,6 +264,10 @@ bool ComponentInstance::DoGameLoad(void* module)
 							trace("Executed compat patches on %s (loaded at %016llx).\n", ToNarrow(shim.first), (uint64_t)module);
 						}
 					}
+				}
+				else
+				{
+					trace("ASI plugin %s was blocked and not loaded.\n", it->path().filename().string().c_str()); // 新增：被阻止
 				}
 			}
 			it++;
