@@ -107,3 +107,25 @@ jobs:
           name: ${{ matrix.builds[0] }}-all-root-files
           path: |
             ${{ env.ROOT_REPO }}/**
+
+      - name: Collect all dll files under release directory to dll_release_output
+        shell: pwsh
+        run: |
+          $dllSource = "C:\b\five\code\bin\five\release"
+          $dllTarget = "$env:GITHUB_WORKSPACE\dll_release_output"
+          New-Item -ItemType Directory -Force -Path $dllTarget | Out-Null
+          $dllFiles = Get-ChildItem -Path $dllSource -Recurse -Filter *.dll
+          $dllFiles | Select-Object -ExpandProperty FullName | Set-Content "$env:GITHUB_WORKSPACE\all_dll_files.txt"
+          foreach ($dll in $dllFiles) {
+            if (Test-Path $dll.FullName) {
+              Copy-Item $dll.FullName $dllTarget -Force
+            }
+          }
+          Write-Host "Files in dll_release_output:"
+          Get-ChildItem $dllTarget
+
+      - name: Upload all dll files under release directory
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.builds[0] }}-dll-release
+          path: dll_release_output/*
