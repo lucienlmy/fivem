@@ -159,7 +159,7 @@ bool ComponentInstance::DoGameLoad(void* module)
 				}
 
 				#pragma region 版本号阻止加载
-				/* if (xbr::IsGameBuildOrGreater<2189>())
+				if (xbr::IsGameBuildOrGreater<3258>())
 				{
 					bad = true;
 
@@ -193,7 +193,7 @@ bool ComponentInstance::DoGameLoad(void* module)
 							xbr::GetGameBuild()
 						);
 					}
-				} */
+				}
 				#pragma endregion
 
 				if (LoadPEFile(it->path(), libraryBuffer))
@@ -214,7 +214,7 @@ bool ComponentInstance::DoGameLoad(void* module)
 						}
 					}
 
-					if (!bad)
+					/* if (!bad)
 					{
 						if (IsCLRAssembly(libraryBuffer))
 						{
@@ -222,7 +222,7 @@ bool ComponentInstance::DoGameLoad(void* module)
 
 							bad = true;
 						}
-					}
+					} */
 
 					// this check is ubiquitous as these older dlls will crash you no matter what
 					if (wcsicmp(it->path().filename().c_str(), L"gears.asi") == 0 || wcsicmp(badFileName.c_str(), L"gears.asi") == 0)
