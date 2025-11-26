@@ -386,8 +386,7 @@ static void OverloadCrashData(TASKDIALOGCONFIG* config)
 	if (wcsstr(crashHash.c_str(), L"nvwgf"))
 	{
 		blame = L"NVIDIA GPU drivers";
-		blame_two = L"This is not the fault of the " PRODUCT_NAME L" developers, and can not be resolved by them. NVIDIA does not provide any error reporting contacts to use to report this problem, nor do they provide "
-			L"debugging information that the developers can use to resolve this issue.";
+		blame_two = L"Please try updating your NVIDIA drivers, restarting your PC and then starting the game again.";
 	}
 
 	if (wcsstr(crashHash.c_str(), L"guard64"))
@@ -1307,7 +1306,7 @@ void InitializeDumpServer(int inheritedHandle, int parentPid)
 					{
 						windowTitle = L"Fatal Error";
 						mainInstruction = L"Early-exit trap";
-						content = fmt::sprintf(L"A problem while running %s has tripped an early-exit trap.\n\nIf asking for support, please provide a readable 'report ID' from the expanded information below.", PRODUCT_NAME);
+						content = fmt::sprintf(L"An error occurred while running %s, triggering an early-exit trap.\n\nIf asking for support, please provide a readable ‘report ID’ from the expanded information below:", PRODUCT_NAME);
 					}
 					else
 					{
