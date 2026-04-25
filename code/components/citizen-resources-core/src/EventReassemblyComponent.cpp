@@ -679,6 +679,7 @@ void EventReassemblyComponentImpl::NetworkTick()
 /// <param name="data">The packet data we received</param>
 void EventReassemblyComponentImpl::HandlePacket(int source, std::string_view data)
 {
+#ifndef IS_FXSERVER
 	rl::MessageBufferView buffer(net::Span<uint8_t>(const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(data.data())), static_cast<size_t>(data.size())));
 
 	EventPacket packet;
@@ -698,7 +699,6 @@ void EventReassemblyComponentImpl::HandlePacket(int source, std::string_view dat
 		// received a ack packet to indicate the remote side received a payload packet
 		std::unique_lock lock(m_listMutex);
 		auto entryIt = m_sendList.find(packet.eventId);
-
 		if (entryIt != m_sendList.end())
 		{
 			std::shared_ptr<SendEvent> sendData = entryIt->second;
@@ -871,6 +871,7 @@ void EventReassemblyComponentImpl::HandlePacket(int source, std::string_view dat
 			HandleReceivedPacket(source, receiveData, net::packet::ReassembledEvent::kFragmentSize);
 		}
 	}
+#endif
 }
 
 /// <summary>
@@ -890,9 +891,8 @@ void EventReassemblyComponentImpl::HandlePacketV2(int source, const net::packet:
 	{
 		// received a ack packet to indicate the remote side received a payload packet
 		std::unique_lock lock(m_listMutex);
-		auto entryIt = m_sendList.find(packet.eventId);
-
-		if (entryIt != m_sendList.end())
+		auto entryIt = m_sendListV2.find(packet.eventId);
+		if (entryIt != m_sendListV2.end())
 		{
 			std::shared_ptr<SendEvent> sendData = entryIt->second;
 

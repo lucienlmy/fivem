@@ -184,6 +184,40 @@ static std::map<std::string, std::string> load_crashometry()
 	return rv;
 }
 
+static std::string SlugifyString(const std::string& text)
+{
+	std::string result;
+	result.reserve(text.size());
+
+	bool lastWasDelimiter = false;
+	for (char ch : text)
+	{
+		if (ch >= 'A' && ch <= 'Z')
+		{
+			result += (ch + ('a' - 'A'));
+			lastWasDelimiter = false;
+		}
+		else if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9'))
+		{
+			result += ch;
+			lastWasDelimiter = false;
+		}
+		else
+		{
+			if (!lastWasDelimiter)
+			{
+				result += '-';
+				lastWasDelimiter = true;
+			}
+		}
+	}
+
+	size_t start = result.find_first_not_of('-');
+	if (start == std::string::npos) return "";
+	size_t end = result.find_last_not_of('-');
+	return result.substr(start, end - start + 1);
+}
+
 static void OnStartSession()
 {
 	auto oldSession = load_json_file(L"data\\cache\\session");
@@ -231,7 +265,7 @@ static void OnStartSession()
 
 	std::time_t t = std::time(nullptr);
 
-	static std::string curChannel = GetUpdateChannel();
+	static std::string curChannel = SlugifyString(GetUpdateChannel());
 
 	auto session = json::object({
 		{ "sid", sid },
@@ -704,6 +738,59 @@ static LPTHREAD_START_ROUTINE GetFunc(HANDLE hProcess, const char* name)
 extern nlohmann::json SymbolicateCrash(HANDLE hProcess, HANDLE hThread, PEXCEPTION_RECORD er, PCONTEXT ctx);
 extern void ParseSymbolicCrash(nlohmann::json& crash, std::string* signature, std::string* stackTrace);
 
+static void PruneCrashDumps()
+{
+	auto crashDirectory = MakeRelativeCitPath(L"crashes");
+	constexpr size_t kMaxDumps = 10;
+
+	std::vector<std::pair<FILETIME, std::wstring>> dumpFiles;
+
+	WIN32_FIND_DATAW findData;
+	HANDLE hFind = FindFirstFileW((crashDirectory + L"\\*.dmp").c_str(), &findData);
+
+	if (hFind == INVALID_HANDLE_VALUE)
+	{
+		return;
+	}
+
+	do
+	{
+		std::wstring fileName = findData.cFileName;
+
+		// skip -full.dmp files, they are cleaned up alongside their parent
+		if (fileName.size() > 9 && fileName.substr(fileName.size() - 9) == L"-full.dmp")
+		{
+			continue;
+		}
+
+		dumpFiles.emplace_back(findData.ftCreationTime, crashDirectory + L"\\" + fileName);
+	} while (FindNextFileW(hFind, &findData));
+
+	FindClose(hFind);
+
+	if (dumpFiles.size() <= kMaxDumps)
+	{
+		return;
+	}
+
+	// sort by creation time, newest first
+	std::sort(dumpFiles.begin(), dumpFiles.end(), [](const auto& a, const auto& b)
+	{
+		return CompareFileTime(&a.first, &b.first) > 0;
+	});
+
+	for (size_t i = kMaxDumps; i < dumpFiles.size(); i++)
+	{
+		const auto& path = dumpFiles[i].second;
+		DeleteFileW(path.c_str());
+
+		// also remove associated files
+		auto basePath = path.substr(0, path.size() - 4); // strip .dmp
+		DeleteFileW((basePath + L"-full.dmp").c_str());
+		DeleteFileW((path + L".gamelog").c_str());
+	}
+}
+
 void InitializeDumpServer(int inheritedHandle, int parentPid)
 {
 	static bool g_running = true;
@@ -735,6 +822,8 @@ void InitializeDumpServer(int inheritedHandle, int parentPid)
 
 	CrashGenerationServer::OnClientDumpRequestCallback dumpCallback = [] (void*, const ClientInfo* info, const std::wstring* filePath)
 	{
+		PruneCrashDumps();
+
 		// we're going to be reporting, make a new event
 		auto crashReportIdx = InterlockedIncrement(&numCrashReports) - 1;
 		HANDLE crashReport = NULL;
@@ -1103,7 +1192,7 @@ void InitializeDumpServer(int inheritedHandle, int parentPid)
 
 				parameters[L"GameBuild"] = ToWide(xbr::GetCurrentGameBuildString());
 
-				parameters[L"ReleaseChannel"] = ToWide(GetUpdateChannel());
+				parameters[L"ReleaseChannel"] = ToWide(SlugifyString(GetUpdateChannel()));
 
 				parameters[L"AdditionalData"] = GetAdditionalData();
 
@@ -1176,6 +1265,14 @@ void InitializeDumpServer(int inheritedHandle, int parentPid)
 				// avoid libcef.dll subprocess crashes terminating the entire job
 				bool shouldTerminate = true;
 				bool shouldUpload = true;
+
+				{
+					auto errorPickup = load_error_pickup();
+					if (!errorPickup.is_null() && errorPickup.contains("no_upload") && errorPickup["no_upload"].get<bool>())
+					{
+						shouldUpload = false;
+					}
+				}
 
 				if (GetProcessId(parentProcess) != GetProcessId(process_handle))
 				{
@@ -1395,7 +1492,10 @@ void InitializeDumpServer(int inheritedHandle, int parentPid)
 
 					g_session["status"] = "crashed";
 
-					UpdateSession(g_session);
+					if (shouldUpload)
+					{
+						UpdateSession(g_session);
+					}
 				}
 
 				uploadError = false;
@@ -1581,6 +1681,7 @@ void InitializeDumpServer(int inheritedHandle, int parentPid)
 				parameters[L"Fatal"] = (shouldTerminate) ? L"true" : L"false";
 
 				// upload the actual minidump file as well
+#define CFX_CRASH_INGRESS_URL "https://crash-ingress.fivem.net"
 #if defined(CFX_CRASH_INGRESS_URL) && (defined(GTA_FIVE) || defined(IS_RDR3))
 				if (uploadCrashes && shouldUpload && HTTPUpload::SendMultipartPostRequest(va(L"%s/post", ToWide(CFX_CRASH_INGRESS_URL)), parameters, files, &timeout, &responseBody, &responseCode))
 				{

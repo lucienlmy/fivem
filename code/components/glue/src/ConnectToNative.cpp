@@ -981,7 +981,7 @@ static InitFunction initFunction([] ()
 
 	curChannel = ToNarrow(resultPath);
 
-	static ConVar<bool> uiPremium("ui_premium", ConVar_None, false);
+	static ConVar<bool> uiPremium("ui_premium", ConVar_Internal | ConVar_ScriptRestricted, false);
 
 	// ConVar_ScriptRestricted because update channel is often misused as a marker for other things
 	static ConVar<std::string> uiUpdateChannel("ui_updateChannel", ConVar_ScriptRestricted, curChannel,
@@ -1038,6 +1038,7 @@ static InitFunction initFunction([] ()
 		{
 			static bool done = ([]
 			{
+#ifdef GTA_FIVE
 				std::thread([]
 				{
 					UiDone();
@@ -1050,6 +1051,7 @@ static InitFunction initFunction([] ()
 					SetForegroundWindow(hWnd);
 				})
 				.detach();
+#endif
 
 				MarkNuiLoaded();
 

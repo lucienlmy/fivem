@@ -121,7 +121,7 @@ namespace fx
 
 	std::optional<std::string> PoolSizeManager::Validate(const std::string& poolName, uint32_t sizeIncrease)
 	{
-		static ConVar<int> moo("moo", ConVar_None, 0);
+		static ConVar<int> moo("moo", ConVar_UserPref, 0);
 
 		bool skipValidation = moo.GetValue() == 31337;
 
@@ -178,9 +178,9 @@ namespace fx
 static InitFunction initFunction([]()
 {
 #ifdef GTA_FIVE
-	std::string limitsFileUrl = "https://content.cfx.re/mirrors/client/pool-size-limits/fivem.json";
+	std::string limitsFileUrl = "https://gss.cfx-services.net/v1/pool-size-limits/fivem";
 #else
-	std::string limitsFileUrl = "https://content.cfx.re/mirrors/client/pool-size-limits/redm.json";
+	std::string limitsFileUrl = "https://gss.cfx-services.net/v1/pool-size-limits/redm";
 #endif
 	fx::PoolSizeManager::FetchLimits(limitsFileUrl);
 	fx::PoolSizeManager::FetchIncreaseRequest();
