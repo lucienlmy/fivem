@@ -8,7 +8,7 @@
 
 class ServerResourceMounter : public fx::ResourceMounter
 {
-public:
+公共:
 	ServerResourceMounter(fx::ResourceManager* manager)
 		: m_manager(manager)
 	{
@@ -29,7 +29,7 @@ public:
 		if (uriParsed)
 		{
 			auto pathRef = uriParsed->pathname();
-			auto fragRef = uriParsed->hash().substr(1);
+			auto fragRef = *skyr::percent_decode(uriParsed->hash().substr(1));
 
 			if (!pathRef.empty() && !fragRef.empty())
 			{
