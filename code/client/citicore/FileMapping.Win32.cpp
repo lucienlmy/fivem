@@ -1,7 +1,7 @@
 /*
- * This file is part of the CitizenFX project - http://citizen.re/
+ * This file is part of the Cfx project - https://cfx.re/
  *
- * See LICENSE and MENTIONS in the root of the source tree for information
+ * See LICENSE in the root of the source tree for information
  * regarding licensing.
  */
 
@@ -626,6 +626,8 @@ NTSTATUS NTAPI LdrLoadDllStub(const wchar_t* fileName, uint32_t* flags, UNICODE_
 		moduleNameStr.find(L"hmipcore64.dll") != std::string::npos ||
 		// NVIDIA SHARE/ShadowPlay capture DLL, high correlation with ERR_GFX_D3D_INIT failures
 		moduleNameStr.find(L"nvspcap") != std::string::npos ||
+		// NVIDIA Game Filter/Freestyle post-processing DLL, crashes on startup due to incompatible D3D hooks
+		moduleNameStr.find(L"nvppex") != std::string::npos ||
 		// Proxifier, causes LoopbackTcpServer crashes
 		//moduleNameStr.find(L"prxernsp.dll") != std::string::npos ||
 		//moduleNameStr.find(L"prxerdrv.dll") != std::string::npos ||
@@ -1040,6 +1042,17 @@ NTSTATUS NTAPI NtQueryVirtualMemoryHook(
 static const DWORD bigOne = 1;
 static auto ntdllRef = GetModuleHandleW(L"ntdll.dll");
 
+static bool IsCallerInModule(void* caller, const wchar_t* moduleName)
+{
+	PVOID base = nullptr;
+	if (!caller || !RtlPcToFileHeader(caller, &base) || !base)
+	{
+		return false;
+	}
+
+	return base == GetModuleHandleW(moduleName);
+}
+
 FARPROC WINAPI GetProcAddressStub(HMODULE hModule, LPCSTR lpProcName, void* caller)
 {
 	if (!IS_INTRESOURCE(lpProcName))
@@ -1049,6 +1062,12 @@ FARPROC WINAPI GetProcAddressStub(HMODULE hModule, LPCSTR lpProcName, void* call
 #ifdef _M_AMD64
 			if (hModule == ntdllRef && _stricmp(lpProcName, "NtQueryInformationProcess") == 0)
 			{
+				// Skip this hook for CFG compiled dlls.
+				if (IsCallerInModule(caller, L"libcef.dll") || IsCallerInModule(caller, L"Chrome_Elf.dll"))
+				{
+					return g_origGetProcAddress(hModule, lpProcName, caller);
+				}
+
 				char* ntdll = (char*)ntdllRef;
 				auto ntdllImage = (PIMAGE_DOS_HEADER)ntdll;
 				auto ntdllPE = (PIMAGE_NT_HEADERS)(ntdll + ntdllImage->e_lfanew);

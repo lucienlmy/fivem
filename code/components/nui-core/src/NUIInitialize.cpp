@@ -1,7 +1,7 @@
 /*
- * This file is part of the CitizenFX project - http://citizen.re/
+ * This file is part of the Cfx project - https://cfx.re/
  *
- * See LICENSE and MENTIONS in the root of the source tree for information
+ * See LICENSE in the root of the source tree for information
  * regarding licensing.
  */
 
@@ -49,7 +49,7 @@
 #include <include/cef_version.h>
 
 #include "DeferredInitializer.h"
-#include <Error.h>
+#include <NUIDevtools.h>
 
 namespace nui
 {
@@ -68,19 +68,33 @@ struct GameRenderData
 	int height;
 	bool requested;
 
+#ifdef GTA_FIVE
+	// For backwards compatability. The flipped texture is slower more prone to flickering/stuttering.
+	bool requestedFlipped;
+	HANDLE flippedHandle;
+#endif
+
 	GameRenderData()
 		: requested(false), handle(NULL), width(0), height(0)
+#ifdef GTA_FIVE
+		  ,requestedFlipped(false), flippedHandle(NULL)
+#endif
 	{
 
 	}
 };
 
 static GLuint g_curGlTexture;
+
+#ifdef GTA_FIVE
+static std::set<GLuint> g_flippedBackBufferTextures;
+#endif
 static std::set<GLuint> g_backBufferTextures;
 
-static void BindGameRenderHandle();
-
 static std::map<GLuint, EGLSurface> g_pbuffers;
+
+static void BindGameRenderHandle(bool flipTexture);
+
 
 static void (*g_origglDeleteTextures)(GLsizei n, const GLuint* textures);
 
@@ -90,6 +104,9 @@ static void glDeleteTexturesHook(GLsizei n, const GLuint* textures)
 	{
 		GLuint texture = textures[i];
 		g_backBufferTextures.erase(texture);
+#ifdef GTA_FIVE
+		g_flippedBackBufferTextures.erase(texture);
+#endif
 
 		if (g_pbuffers.find(texture) != g_pbuffers.end())
 		{
@@ -120,12 +137,22 @@ static void glBindTextureHook(GLenum target, GLuint texture)
 	{
 		lastBackbufHandle = handleData->handle;
 
+#ifdef GTA_FIVE
+		for (auto textureId : g_flippedBackBufferTextures)
+		{
+			g_curGlTexture = textureId;
+
+			g_origglBindTexture(GL_TEXTURE_2D, textureId);
+			BindGameRenderHandle(true);
+		}
+#endif
+	
 		for (auto textureId : g_backBufferTextures)
 		{
 			g_curGlTexture = textureId;
 
 			g_origglBindTexture(GL_TEXTURE_2D, textureId);
-			BindGameRenderHandle();
+			BindGameRenderHandle(false);
 		}
 	}
 
@@ -197,7 +224,7 @@ EGLConfig ChooseCompatibleConfig()
 	return nullptr;
 }
 
-static void BindGameRenderHandle()
+static void BindGameRenderHandle(bool flipTexture = true)
 {
 	static auto _eglGetCurrentDisplay = (decltype(&eglGetCurrentDisplay))(GetProcAddress(GetModuleHandle(L"libEGL.dll"), "eglGetCurrentDisplay"));
 	static auto _eglDestroySurface = (decltype(&eglDestroySurface))(GetProcAddress(GetModuleHandle(L"libEGL.dll"), "eglDestroySurface"));
@@ -212,8 +239,15 @@ static void BindGameRenderHandle()
 
 	static HostSharedData<GameRenderData> handleData(launch::IsSDK() ? "CfxGameRenderHandleFxDK" : "CfxGameRenderHandle");
 
+#ifdef GTA_FIVE
+	// V has the less efficent game-view capture to be accounted for
+	HANDLE shareHandle = flipTexture ? handleData->flippedHandle : handleData->handle;
+#else
+	HANDLE shareHandle = handleData->handle;
+#endif
+
 	// not existent yet, but we will retry this later on
-	if (!handleData->handle)
+	if (!shareHandle)
 	{
 		return;
 	}
@@ -236,9 +270,17 @@ static void BindGameRenderHandle()
 	EGLSurface pbuffer = _eglCreatePbufferFromClientBuffer(
 	m_display,
 	EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE,
-	(EGLClientBuffer)handleData->handle,
+	shareHandle,
 	config,
 	pbuffer_attributes);
+
+	if (pbuffer == EGL_NO_SURFACE)
+	{
+		EGLint err = _eglGetError();
+		trace("Failed to initialize EGL for game-view capture %i\n", err);
+		return;
+	}
+
 
 	if (g_pbuffers.find(g_curGlTexture) != g_pbuffers.end())
 	{
@@ -250,7 +292,9 @@ static void BindGameRenderHandle()
 	g_pbuffers.insert({ g_curGlTexture, pbuffer });
 
 	handleData->requested = true;
-
+#ifdef GTA_FIVE
+	handleData->requestedFlipped = flipTexture;
+#endif
 	_eglBindTexImage(m_display, pbuffer, EGL_BACK_BUFFER);
 }
 
@@ -262,6 +306,15 @@ static void glTexParameterfHook(GLenum target, GLenum pname, GLfloat param)
 	static std::map<GLuint, int> stages;
 	int& stage = stages[g_curGlTexture];
 
+	// New texParameterf sequence in order to bind a more efficient version of the game render texture.
+	if (target == GL_TEXTURE_2D && pname == GL_TEXTURE_WRAP_T && param == 0x47d87380)
+	{
+		BindGameRenderHandle(false);
+		g_backBufferTextures.insert(g_curGlTexture);
+		return;
+	}
+
+#if GTA_FIVE
 	if (target == GL_TEXTURE_2D && pname == GL_TEXTURE_WRAP_T)
 	{
 		switch (stage)
@@ -307,12 +360,15 @@ static void glTexParameterfHook(GLenum target, GLenum pname, GLfloat param)
 		stage = 0;
 
 		BindGameRenderHandle();
-		g_backBufferTextures.insert(g_curGlTexture);
+		g_flippedBackBufferTextures.insert(g_curGlTexture);
 	}
 	else if (stage <= 1)
 	{
 		g_origglTexParameterf(target, pname, param);
 	}
+#else
+	g_origglTexParameterf(target, pname, param);
+#endif
 }
 
 static HRESULT(*g_origD3D11CreateDevice)(_In_opt_ IDXGIAdapter* pAdapter, D3D_DRIVER_TYPE DriverType, HMODULE Software, UINT Flags, _In_reads_opt_(FeatureLevels) CONST D3D_FEATURE_LEVEL* pFeatureLevels, UINT FeatureLevels, UINT SDKVersion, _COM_Outptr_opt_ ID3D11Device** ppDevice, _Out_opt_ D3D_FEATURE_LEVEL* pFeatureLevel, _COM_Outptr_opt_ ID3D11DeviceContext** ppImmediateContext);
@@ -906,7 +962,7 @@ static void PatchAdapter(IDXGIAdapter** pAdapter)
 
 #include <d3d11_1.h>
 
-static bool g_reshit;
+static bool g_usingReshade;
 
 template<typename TFnLeft, typename TFnRight>
 void VHook(intptr_t& ref, TFnLeft fn, TFnRight out)
@@ -945,6 +1001,7 @@ static void PatchCreateResults(ID3D11Device** ppDevice, ID3D11DeviceContext** pp
 
 	if (ppDevice && ppImmediateContext && can && *ppDevice && *ppImmediateContext)
 	{
+		return;
 		auto vtbl = **(intptr_t***)ppDevice;
 		auto vtblCxt = **(intptr_t***)ppImmediateContext;
 
@@ -982,7 +1039,7 @@ static void PatchCreateResults(ID3D11Device** ppDevice, ID3D11DeviceContext** pp
 	}
 
 	// horrible hack as 'reshade' doesn't give us our original device back
-	if (g_reshit && ppDevice && *ppDevice)
+	if (g_usingReshade && ppDevice && *ppDevice)
 	{
 		// get context
 		WRL::ComPtr<ID3D11DeviceContext> cxt;
@@ -1190,7 +1247,7 @@ static HRESULT D3D11CreateDeviceHookMain(_In_opt_ IDXGIAdapter* pAdapter, D3D_DR
 	return hr;
 }
 
-#include <psapi.h>
+#include <include/cef_version_info.h>
 
 void HookLibGL(HMODULE libGL)
 {
@@ -1228,7 +1285,7 @@ void HookLibGL(HMODULE libGL)
 	g_d3d11 = std::unique_ptr<ModuleData>(new ModuleData{ realSysDll });
 
 	// maybe
-	g_reshit = true;
+	g_usingReshade = true;
 
 	MH_Initialize();
 	MH_CreateHook(GetProcAddress(libGL, "glTexParameterf"), glTexParameterfHook, (void**)&g_origglTexParameterf);
@@ -1267,14 +1324,6 @@ void Component_RunPreInit()
 		return;
 	}
 
-#ifdef _M_AMD64
-	// again, a Win7 SP1 check (Chromium x64 isn't supported below this operating level)
-	if (!IsWindows7SP1OrGreater())
-	{
-		FatalError("CitizenFX requires Windows 7 SP1 or higher. Please upgrade to this operating system version to run CitizenFX.");
-	}
-#endif
-
 	// CEF keeps loading/unloading this - load it ourselves to make the refcount always 1
 	LoadLibrary(L"bluetoothapis.dll");
 
@@ -1307,16 +1356,15 @@ void Component_RunPreInit()
 
 	// verify if the CEF API hash is screwed
 	{
-		const char* apiHash = cef_api_hash(0);
-		const char* apiHashUniversal = cef_api_hash(1);
-		if (strcmp(apiHash, CEF_API_HASH_PLATFORM) != 0 || strcmp(apiHashUniversal, CEF_API_HASH_UNIVERSAL) != 0)
+		const char* apiHash = cef_api_hash(CEF_API_VERSION, 0);
+		const char* apiHashUniversal = cef_api_hash(CEF_API_VERSION, 1);
+ 		if (strcmp(apiHash, CEF_API_HASH_PLATFORM) != 0)
 		{
 			_wunlink(MakeRelativeCitPath(L"content_index.xml").c_str());
-			FatalError("CEF API hash mismatch\nA mismatch was detected between `nui-core.dll` and `bin/libcef.dll`. Please restart the game and try again.\n\nPlatform hash:\n%s\n%s\n\nUniversal hash:\n%s\n%s",
+			FatalError("CEF API hash mismatch\nA mismatch was detected between `nui-core.dll` and `bin/libcef.dll`. Please restart the game and try again.\n\nPlatform hash:\n%s\n%s\n\nUniversal hash:\n%s",
 			apiHash,
 			CEF_API_HASH_PLATFORM,
-			apiHashUniversal,
-			CEF_API_HASH_UNIVERSAL);
+			apiHashUniversal);
 		}
 	}
 
@@ -1462,6 +1510,29 @@ void SwitchContext(const std::string& contextId)
 	}
 }
 
+static bool nuiEnableDevtools = true;
+static void NuiDevtoolModeChanged(internal::ConsoleVariableEntry<bool>* var)
+{
+	nuiEnableDevtools = var->GetRawValue();
+
+	if (!nuiEnableDevtools)
+	{
+		auto rootWindow = Instance<NUIWindowManager>::Get()->GetRootWindow();
+
+		if (rootWindow.GetRef())
+		{
+			auto browser = rootWindow->GetBrowser();
+
+			if (browser)
+			{
+				browser->GetHost()->CloseDevTools();
+			}
+		}
+	}
+
+	g_devToolsObserver->SetAllowed(nuiEnableDevtools);
+}
+
 void Initialize(nui::GameInterface* gi)
 {
 	g_nuiGi = gi;
@@ -1472,6 +1543,7 @@ void Initialize(nui::GameInterface* gi)
     }
 
 	static ConVar<std::string> uiUrlVar("ui_url", ConVar_UserPref, "https://nui-game-internal/ui/app/index.html");
+	static ConVar<bool> enableDevtoolVar("nui_enableDevtools", ConVar_Archive | ConVar_Replicated, true, &NuiDevtoolModeChanged);
 
 	auto deferredInitializer = DeferredInitializer::Create([]()
 	{
@@ -1495,6 +1567,18 @@ void Initialize(nui::GameInterface* gi)
 		cSettings.log_severity = LOGSEVERITY_DEFAULT;
 		cSettings.background_color = 0;
 
+		// Disable google oAuth from being checked/used
+		static const wchar_t* kEnvVars[] = {
+			L"GOOGLE_API_KEY",
+			L"GOOGLE_DEFAULT_CLIENT_ID",
+			L"GOOGLE_DEFAULT_CLIENT_SECRET",
+		};
+
+		for (auto name : kEnvVars)
+		{
+			SetEnvironmentVariableW(name, nullptr);
+		}
+
 		// read the platform version
 		FILE* f = _wfopen(MakeRelativeCitPath(L"citizen/release.txt").c_str(), L"r");
 		int version = 0;
@@ -1509,10 +1593,7 @@ void Initialize(nui::GameInterface* gi)
 			version = atoi(ver);
 		}
 
-		// #TODONY: why is this missing from official CEF?
-#ifndef GTA_NY
 		CefString(&cSettings.user_agent_product).FromWString(fmt::sprintf(L"Chrome/%d.%d.%d.%d CitizenFX/1.0.0.%d", cef_version_info(4), cef_version_info(5), cef_version_info(6), cef_version_info(7), version));
-#endif
 
 		CefString(&cSettings.log_file).FromWString(MakeRelativeCitPath(L"cef_console.txt"));
 
@@ -1522,7 +1603,7 @@ void Initialize(nui::GameInterface* gi)
 
 		CefString(&cSettings.cookieable_schemes_list).FromString("nui");
 
-		std::wstring resPath = MakeRelativeCitPath(L"bin/cef/");
+		std::wstring resPath = MakeRelativeCitPath(L"bin\\cef");
 
 		CefString(&cSettings.resources_dir_path).FromWString(resPath);
 		CefString(&cSettings.locales_dir_path).FromWString(resPath);
@@ -1589,6 +1670,12 @@ void Initialize(nui::GameInterface* gi)
 	
 	static ConsoleCommand devtoolsCmd("nui_devtools", []()
 	{
+		if (!nui::HasMainUI() && !nuiEnableDevtools)
+		{
+			trace("nui_devtools requires the 'nui_enableDevtools' replicated convar to be enabled");
+			return;
+		}
+
 		auto rootWindow = Instance<NUIWindowManager>::Get()->GetRootWindow();
 
 		if (rootWindow.GetRef())
@@ -1599,16 +1686,23 @@ void Initialize(nui::GameInterface* gi)
 			{
 				CefWindowInfo wi;
 				wi.SetAsPopup(NULL, "NUI DevTools");
-
+				wi.runtime_style = CEF_RUNTIME_STYLE_ALLOY; 
+				CefRefPtr<NUIDevtoolsClient> client = new NUIDevtoolsClient();
 				CefBrowserSettings s;
 
-				browser->GetHost()->ShowDevTools(wi, new NUIClient(nullptr), s, {});
+				browser->GetHost()->ShowDevTools(wi, client, s, {});
 			}
 		}
 	});
 
 	static ConsoleCommand devtoolsWindowCmd("nui_devtools", [](const std::string& windowName)
 	{
+		if (!nui::HasMainUI() && !nuiEnableDevtools)
+		{
+			trace("nui_devtools requires the 'nui_enableDevtools' replicated convar to be enabled");
+			return;
+		}
+
 		auto browser = nui::GetNUIWindowBrowser(windowName);
 
 		if (!browser)
@@ -1620,10 +1714,11 @@ void Initialize(nui::GameInterface* gi)
 		{
 			CefWindowInfo wi;
 			wi.SetAsPopup(NULL, fmt::sprintf("NUI DevTools - %s", windowName));
-
+			wi.runtime_style = CEF_RUNTIME_STYLE_ALLOY; 
+			CefRefPtr<NUIDevtoolsClient> client = new NUIDevtoolsClient();
 			CefBrowserSettings s;
 
-			browser->GetHost()->ShowDevTools(wi, new NUIClient(nullptr), s, {});
+			browser->GetHost()->ShowDevTools(wi, client, s, {});
 		}
 		else
 		{

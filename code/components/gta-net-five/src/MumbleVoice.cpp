@@ -533,7 +533,7 @@ static void Mumble_RunFrame()
 		bool pushToTalkPressed = FxNativeInvoke::Invoke<bool>(isControlPressed, PLAYER_CONTROL, INPUT_PUSH_TO_TALK);
 		bool pushToTalkEnabled = FxNativeInvoke::Invoke<bool>(isControlEnabled, PLAYER_CONTROL, INPUT_PUSH_TO_TALK);
 
-#if __has_include(<GameInput.h>)
+#if __has_include(<GameInput.h>) && !defined(IS_RDR3)
 		// game::IsControlKeyDown doesn't take enabled/disabled state into account, so we manually check enabled state
 		g_mumbleClient->SetPTTButtonState(pushToTalkEnabled && (pushToTalkPressed || game::IsControlKeyDown(249 /* INPUT_PUSH_TO_TALK */)));
 #else
@@ -840,6 +840,14 @@ static std::optional<std::string> getMumbleName(int playerId)
 	{
 		return std::nullopt;
 	}
+
+	// the player name can change after connecting to Mumble (SET_PLAYER_NAME), so prefer the actual Mumble user name
+	std::string mumbleName = g_mumbleClient->GetPlayerNameFromServerId(serverId);
+
+	if (!mumbleName.empty())
+	{
+		return mumbleName;
+	}
 	
 	return fmt::sprintf("[%d] %s",
 		serverId,
@@ -967,7 +975,17 @@ static HookFunction hookFunction([]()
 			std::vector<std::string> talkers;
 			g_mumbleClient->GetTalkers(&talkers);
 
-			std::set<std::string> talkerSet(talkers.begin(), talkers.end());
+			// match talkers by server ID, as the player name can change after connecting to Mumble (SET_PLAYER_NAME)
+			std::set<int> talkerSet;
+
+			for (const auto& talker : talkers)
+			{
+				// Mumble user names are "[serverId] name"
+				if (talker.length() >= 2)
+				{
+					talkerSet.insert(atoi(talker.c_str() + 1));
+				}
+			}
 
 			g_talkers.reset();
 
@@ -975,19 +993,9 @@ static HookFunction hookFunction([]()
 			{
 				if (FxNativeInvoke::Invoke<bool>(isPlayerActive, i))
 				{
-					static std::map<int, std::string> names;
-
 					int sid = FxNativeInvoke::Invoke<int>(getServerId, i);
-					auto nameIt = names.find(sid);
 
-					if (nameIt == names.end())
-					{
-						nameIt = names.emplace(sid, fmt::sprintf("[%d] %s",
-							sid,
-							FxNativeInvoke::Invoke<const char*>(getPlayerName, i))).first;
-					}
-
-					if (talkerSet.find(nameIt->second) != talkerSet.end())
+					if (talkerSet.find(sid) != talkerSet.end())
 					{
 						g_talkers.set(i);
 					}

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -37,8 +37,6 @@ let zStack = [];
  */
 let focusStack = [];
 
-let handoverBlob = {};
-let serverAddress = '';
 let frameEscapeFunctions = {};
 
 registerPushFunction(function(type, ...args) {
@@ -51,10 +49,6 @@ registerPushFunction(function(type, ...args) {
 				focusFrame(data.frameName);
 			} else if (data.type == 'blurFrame') {
 				blurFrame(data.frameName);
-			} else if (data.type == 'setHandover') {
-				handoverBlob = data.data;
-			} else if (data.type == 'setServerAddress') {
-				serverAddress = data.data;
 			} else if (data.type == 'setZIndex') {
 				const { frameName, zIndex } = data;
 				if (frameName in citFrames) {
@@ -85,7 +79,15 @@ registerFrameFunction(function(msg, frameName, frameUrl)
 		const frame = document.createElement('iframe');
 		frame.name = frameName;
 		frame.style.visibility = 'hidden';
-		frame.allow = 'microphone *; camera *;';
+		if (frameName == "loadingscreen") 
+		{
+			frame.allow = "autoplay"
+		}
+		else
+		{
+			frame.allow = "microphone *; camera *; autoplay; payment 'none'; geolocation 'none';";
+		}
+		frame.sandbox = 'allow-forms allow-scripts allow-same-origin';
 		frame.src = frameUrl;
 		frame.tabIndex = -1;
 
@@ -101,11 +103,6 @@ registerFrameFunction(function(msg, frameName, frameUrl)
 			frame.blur();
 			curElement.focus();
 		}
-
-		frame.contentWindow.addEventListener('DOMContentLoaded', function()
-		{
-			frame.style.visibility = 'visible';
-		}, true);
 		
 		frameEscapeFunctions[frameName] = () => {
 			setTimeout(() => {
@@ -115,17 +112,10 @@ registerFrameFunction(function(msg, frameName, frameUrl)
 				}
 			}, 32);
 		}
-
-		frame.contentWindow.GetParentResourceName = function()
-		{
-			return frameName;
-		}
 		
-		if (frameName === 'loadingScreen')
-		{
-			frame.contentWindow.nuiHandoverData = handoverBlob || {};
-			frame.contentWindow.nuiHandoverData.serverAddress = serverAddress;
-		}
+		frame.addEventListener('load', function() {
+		    frame.style.visibility = 'visible';
+        });
 	}
 	else if (msg == "destroyFrame")
 	{
@@ -201,6 +191,7 @@ blurFrame = function(frameName)
 		focusFrame(focusStack[0]);
 	}
 };
+
 </script>
 </head>
 <body>

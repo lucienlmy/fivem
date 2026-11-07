@@ -3,6 +3,7 @@
 #include <NetLibrary.h>
 #include <Utils.h>
 #include <json.hpp>
+#include <future>
 
 #include <CrossBuildRuntime.h>
 #include <PureModeState.h>
@@ -13,21 +14,21 @@
 #include "../../client/launcher/InstallerExtraction.h"
 
 int gameCacheTargetBuild;
-bool gameCacheReplaceExecutable;
+int gameCacheDefaultBuild;
 
 extern NetLibrary* netLibrary;
 extern std::map<std::string, std::string> UpdateGameCache();
 
-extern void RestartGameToOtherBuild(int build, int pureLevel, std::wstring poolSizesIncreaseSetting, bool replaceExecutable);
+extern void RestartGameToOtherBuild(int build, int pureLevel, std::wstring poolSizesIncreaseSetting, int defaultBuild);
 
 static std::function<void(const std::string&)> g_submitFn;
 static bool g_cancelable;
 static bool g_canceled;
 static bool g_hadError;
 
-void PerformStateSwitch(int build, int pureLevel, std::wstring poolSizesIncreaseSetting, bool replaceExecutable);
+void PerformStateSwitch(int build, int pureLevel, std::wstring poolSizesIncreaseSetting, int defaultBuild);
 
-void InitializeBuildSwitch(int build, int pureLevel, std::wstring poolSizesIncreaseSetting, bool replaceExecutable)
+bool InitializeBuildSwitch(int build, int pureLevel, std::wstring poolSizesIncreaseSetting, int defaultBuild, bool skip)
 {
 	if (nui::HasMainUI())
 	{
@@ -45,26 +46,44 @@ void InitializeBuildSwitch(int build, int pureLevel, std::wstring poolSizesIncre
 			{ "build", build },
 			{ "pureLevel", pureLevel },
 			{ "poolSizesIncrease", ToNarrow(poolSizesIncreaseSetting) },
-			{ "replaceExecutable", replaceExecutable },
+			{ "executable", std::max(build, defaultBuild) },
 			{ "currentBuild", xbr::GetRequestedGameBuild() },
 			{ "currentPureLevel", fx::client::GetPureLevel() },
 			{ "currentPoolSizesIncrease", std::move(currentPoolSizesIncreaseSetting) },
-			{ "currentReplaceExecutable", xbr::GetReplaceExecutable() }
+			{ "currentExecutable", xbr::GetGameBuild() },
+			{ "optional", skip }
 		});
 
 		nui::PostFrameMessage("mpMenu", fmt::sprintf(R"({ "type": "connectBuildSwitchRequest", "data": %s })", j.dump()));
 
-		g_submitFn = [build, pureLevel, poolSizesIncreaseSetting = std::move(poolSizesIncreaseSetting), replaceExecutable](const std::string& action)
+		std::promise<std::string> responsePromise;
+		g_submitFn = [&responsePromise](const std::string& action)
 		{
-			if (action == "ok")
-			{
-				PerformStateSwitch(build, pureLevel, std::move(poolSizesIncreaseSetting), replaceExecutable);
-			}
+			responsePromise.set_value(action);
 		};
+
+		std::future<std::string> response = responsePromise.get_future();
+		std::string retval = response.get();
+
+		if (retval == "ok")
+		{
+			PerformStateSwitch(build, pureLevel, std::move(poolSizesIncreaseSetting), defaultBuild);
+			return false;
+		}
+		else if (retval == "skip")
+		{
+			return true;
+		}
+		else
+		{
+			return false;
+		}
 	}
+
+	return false;
 }
 
-void PerformStateSwitch(int build, int pureLevel, std::wstring poolSizesIncreaseSetting, bool replaceExecutable)
+void PerformStateSwitch(int build, int pureLevel, std::wstring poolSizesIncreaseSetting, int defaultBuild)
 {
 	if (gameCacheTargetBuild != 0)
 	{
@@ -72,14 +91,14 @@ void PerformStateSwitch(int build, int pureLevel, std::wstring poolSizesIncrease
 	}
 
 	gameCacheTargetBuild = build;
-	gameCacheReplaceExecutable = replaceExecutable;
+	gameCacheDefaultBuild = defaultBuild;
 
-	std::thread([pureLevel, poolSizesIncreaseSetting = std::move(poolSizesIncreaseSetting), replaceExecutable]()
+	std::thread([pureLevel, poolSizesIncreaseSetting = std::move(poolSizesIncreaseSetting), defaultBuild]()
 	{
 		// let's try to update the game cache
 		if (!UpdateGameCache().empty())
 		{
-			RestartGameToOtherBuild(gameCacheTargetBuild, pureLevel, std::move(poolSizesIncreaseSetting), replaceExecutable);
+			RestartGameToOtherBuild(gameCacheTargetBuild, pureLevel, std::move(poolSizesIncreaseSetting), defaultBuild);
 		}
 		// display a generic error if we failed
 		else if (!g_hadError && !g_canceled)

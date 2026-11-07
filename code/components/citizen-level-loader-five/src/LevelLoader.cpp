@@ -1,7 +1,7 @@
 /*
- * This file is part of the CitizenFX project - http://citizen.re/
+ * This file is part of the Cfx project - https://cfx.re/
  *
- * See LICENSE and MENTIONS in the root of the source tree for information
+ * See LICENSE in the root of the source tree for information
  * regarding licensing.
  */
 
@@ -24,8 +24,6 @@
 #include <concurrent_queue.h>
 
 #include "atArray.h"
-
-#include <SharedLegitimacyAPI.h>
 
 void DLL_IMPORT CfxCollection_AddStreamingFileByTag(const std::string& tag, const std::string& fileName, rage::ResourceFlags flags);
 
@@ -275,27 +273,6 @@ static void SetCoreGameMode(Mode mode)
 	setVariable("storyMode", mode == Mode::STORY_MODE);
 	setVariable("localMode", mode == Mode::LOCAL_MODE || mode == Mode::EDITOR_MODE);
 	setVariable("editorMode", mode == Mode::EDITOR_MODE);
-
-	auto icgi = Instance<ICoreGameInit>::Get();
-
-	if (icgi->HasVariable("storyMode"))
-	{
-		cfx::legitimacy::SetSteamRichPresenceWrapper("status", "Playing Story Mode");
-		cfx::legitimacy::SetSteamRichPresenceWrapper("steam_display", "#Status_InStoryMode");
-	}
-	else if (icgi->HasVariable("editorMode"))
-	{
-		cfx::legitimacy::SetSteamRichPresenceWrapper("status", "In the Rockstar Editor");
-		cfx::legitimacy::SetSteamRichPresenceWrapper("steam_display", "#Status_InReplayEditor");
-	}
-	else if (icgi->HasVariable("localMode"))
-	{
-		std::string localName = "Unknown";
-		Instance<ICoreGameInit>::Get()->GetData("localResource", &localName);
-
-		cfx::legitimacy::SetSteamRichPresenceWrapper("status", fmt::format("Playing: {}", localName));
-		cfx::legitimacy::SetSteamRichPresenceWrapper("steam_display", "#Status_InStoryMode");
-	}
 }
 
 static void LoadLevel(const char* levelName, Mode mode)
@@ -533,11 +510,6 @@ static InitFunction initFunction([] ()
 	Instance<ICoreGameInit>::Get()->OnGameRequestLoad.Connect([]()
 	{
 		g_gameUnloaded = false;
-	});
-
-	OnKillNetwork.Connect([](const char* message)
-	{
-		cfx::legitimacy::ResetSteamRichPresenceWrapper();
 	});
 
 	Instance<ICoreGameInit>::Get()->OnShutdownSession.Connect([]()

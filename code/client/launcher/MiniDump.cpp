@@ -1,7 +1,7 @@
 /*
- * This file is part of the CitizenFX project - http://citizen.re/
+ * This file is part of the Cfx project - https://cfx.re/
  *
- * See LICENSE and MENTIONS in the root of the source tree for information
+ * See LICENSE in the root of the source tree for information
  * regarding licensing.
  */
 
@@ -34,6 +34,7 @@ using namespace google_breakpad;
 
 #include <json.hpp>
 
+#include <random>
 #include <regex>
 #include <sstream>
 
@@ -421,6 +422,12 @@ static void OverloadCrashData(TASKDIALOGCONFIG* config)
 	{
 		blame = L"NVIDIA GPU drivers";
 		blame_two = L"Please try updating your NVIDIA drivers, restarting your PC and then starting the game again.";
+	}
+
+	if (wcsstr(crashHash.c_str(), L"nvppex"))
+	{
+		blame = L"NVIDIA Game Filters (nvppex.dll)";
+		blame_two = L"Please disable NVIDIA Game Filters (Freestyle) in the NVIDIA App and restart the game.";
 	}
 
 	if (wcsstr(crashHash.c_str(), L"guard64"))
@@ -1267,6 +1274,11 @@ void InitializeDumpServer(int inheritedHandle, int parentPid)
 				bool shouldUpload = true;
 
 				{
+					// 5% chance to upload
+					std::random_device rd;
+					std::uniform_int_distribution<int> dist(0, 99);
+					shouldUpload = dist(rd) < 5;
+
 					auto errorPickup = load_error_pickup();
 					if (!errorPickup.is_null() && errorPickup.contains("no_upload") && errorPickup["no_upload"].get<bool>())
 					{
@@ -1526,7 +1538,7 @@ void InitializeDumpServer(int inheritedHandle, int parentPid)
 
 				taskDialogConfig.cbSize = sizeof(taskDialogConfig);
 				taskDialogConfig.hInstance = GetModuleHandle(nullptr);
-				taskDialogConfig.dwFlags = TDF_ENABLE_HYPERLINKS | TDF_EXPAND_FOOTER_AREA | TDF_SHOW_PROGRESS_BAR | TDF_CALLBACK_TIMER | TDF_USE_COMMAND_LINKS | TDF_EXPANDED_BY_DEFAULT;
+				taskDialogConfig.dwFlags = TDF_EXPAND_FOOTER_AREA | TDF_SHOW_PROGRESS_BAR | TDF_CALLBACK_TIMER | TDF_USE_COMMAND_LINKS | TDF_EXPANDED_BY_DEFAULT;
 				taskDialogConfig.dwCommonButtons = TDCBF_CLOSE_BUTTON;
 				taskDialogConfig.cButtons = 1;
 				taskDialogConfig.pButtons = buttons;

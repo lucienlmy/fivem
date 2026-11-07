@@ -49,12 +49,15 @@
 
 #include <utf8.h>
 
+#include <PlayerName.h>
+
 #include "NetBitVersion.h"
 
 #include <HttpClient.h>
 
-#include "CnlEndpoint.h"
+#include <StructuredTrace.h>
 
+#include "CnlEndpoint.h"
 using json = nlohmann::json;
 
 static std::forward_list<fx::ServerIdentityProviderBase*> g_serverProviders;
@@ -315,7 +318,7 @@ std::optional<TicketData> VerifyTicketEx(const std::string& ticket, const Botan:
 	size_t length = static_cast<size_t>(*(uint32_t*)&ticketData[20 + 4 + 128]);
 
 	// validate full length
-	if (ticketData.size() < 20 + 4 + 128 + 4 + length)
+	if (ticketData.size() < 20 + 4 + 128 + 4 + length + 4 + 128)
 	{
 		return {};
 	}
@@ -367,7 +370,7 @@ std::optional<TicketData> VerifyTicketEx(const std::string& ticket, const Botan:
 	{
 		uint32_t extraJsonLength = *(uint32_t*)&extraData[20];
 
-		if (length >= (24 + extraJsonLength))
+		if (extraJsonLength <= length - 24)
 		{
 			outData.extraJson = std::string{ (char*)&extraData[24], extraJsonLength };
 		}
@@ -378,13 +381,15 @@ std::optional<TicketData> VerifyTicketEx(const std::string& ticket, const Botan:
 }
 
 extern std::shared_ptr<ConVar<bool>> g_oneSyncVar;
+std::shared_ptr<ConVar<bool>> g_enforceSteamAuth;
 fx::GameBuild g_enforcedGameBuild;
-bool g_replaceExecutable;
 
 static InitFunction initFunction([]()
 {
 	fx::ServerInstanceBase::OnServerCreate.Connect([](fx::ServerInstanceBase* instance)
 	{
+		g_enforceSteamAuth = instance->AddVariable<bool>("sv_enforceSteamAuth", ConVar_ServerInfo, false);
+
 		auto minTrustVar = instance->AddVariable<int>("sv_authMinTrust", ConVar_None, 1);
 		minTrustVar->GetHelper()->SetConstraints(1, 5);
 
@@ -400,11 +405,14 @@ static InitFunction initFunction([]()
 		auto srvEndpoints = instance->AddVariable<std::string>("sv_endpoints", ConVar_None, "");
 		auto lanVar = instance->AddVariable<bool>("sv_lan", ConVar_ServerInfo, false);
 
-		g_enforcedGameBuild = xbr::GetDefaultGTA5BuildString();
-		auto enforceGameBuildVar = instance->AddVariable<fx::GameBuild>("sv_enforceGameBuild", ConVar_ReadOnly | ConVar_ServerInfo, xbr::GetDefaultGTA5BuildString(), &g_enforcedGameBuild);
+		g_enforcedGameBuild = xbr::GetMandatedDefaultGTA5BuildString();
+		auto enforceGameBuildVar = instance->AddVariable<fx::GameBuild>("sv_enforceGameBuild", ConVar_ReadOnly | ConVar_ServerInfo, xbr::GetMandatedDefaultGTA5BuildString(), &g_enforcedGameBuild);
 
-		g_replaceExecutable = false;
-		auto replaceExecutableVar = instance->AddVariable<bool>("sv_replaceExeToSwitchBuilds", ConVar_ReadOnly | ConVar_ServerInfo, false, &g_replaceExecutable);
+		// sv_defaultGameBuild mandates the default game executable build that clients must use.
+		// This allows the server to control which executable clients run without requiring all clients to update simultaneously.
+		auto defaultGameBuildVar = instance->AddVariable<std::string>("sv_defaultGameBuild", ConVar_Internal | ConVar_ServerInfo, xbr::GetMandatedDefaultGTA5BuildString());
+
+		auto replaceExecutableVar = instance->AddVariable<bool>("sv_replaceExeToSwitchBuilds", ConVar_Internal | ConVar_ServerInfo, false);
 
 		auto poolSizesIncrease = std::make_shared<std::unordered_map<std::string, uint32_t>>();
 		auto poolSizesIncreaseVar = instance->AddVariable<std::string>("sv_poolSizesIncrease", ConVar_ServerInfo | ConVar_Internal, "");
@@ -418,7 +426,7 @@ static InitFunction initFunction([]()
 			{
 				previousTitle = gameName;
 
-				std::string limitsFileUrl = "https://gss.cfx-services.net/v1/pool-size-limits/";
+				std::string limitsFileUrl = "https://gss.cfx-services.net/v1/public/pool-size-limits/";
 				limitsFileUrl += gameName == fx::GameName::GTA5 ? "fivem" : "redm";
 
 				fx::PoolSizeManager::FetchLimits(limitsFileUrl, true);
@@ -438,13 +446,18 @@ static InitFunction initFunction([]()
 			poolSizesIncreaseVar->GetHelper()->SetRawValue(nlohmann::json(*poolSizesIncrease).dump());
 		});
 
-		instance->GetComponent<fx::GameServer>()->OnTick.Connect([instance, enforceGameBuildVar]()
+		instance->GetComponent<fx::GameServer>()->OnTick.Connect([instance, enforceGameBuildVar, defaultGameBuildVar]()
 		{
 			if (instance->GetComponent<fx::GameServer>()->GetGameName() == fx::GameName::RDR3)
 			{
-				if (g_enforcedGameBuild == xbr::GetDefaultGTA5BuildString())
+				if (g_enforcedGameBuild == xbr::GetMandatedDefaultGTA5BuildString())
 				{
-					enforceGameBuildVar->GetHelper()->SetRawValue(xbr::GetDefaultRDR3BuildString());
+					enforceGameBuildVar->GetHelper()->SetRawValue(xbr::GetMandatedDefaultRDR3BuildString());
+				}
+
+				if (defaultGameBuildVar->GetValue() == xbr::GetMandatedDefaultGTA5BuildString())
+				{
+					defaultGameBuildVar->GetHelper()->SetRawValue(xbr::GetMandatedDefaultRDR3BuildString());
 				}
 			}
 
@@ -603,27 +616,11 @@ static InitFunction initFunction([]()
 				return;
 			}
 
-			// limit name length
-			if (name.length() >= 200)
+			// limit name length and replace invalid UTF8 sequences in name
+			if (!fx::NormalizePlayerName(name))
 			{
-				name = name.substr(0, 200);
-			}
-
-			// replace invalid UTF8 sequences in name
-			{
-				std::string validName;
-
-				try
-				{
-					utf8::replace_invalid(name.begin(), name.end(), std::back_inserter(validName));
-				}
-				catch (std::exception& e)
-				{
-					sendError("Parsing name failed.");
-					return;
-				}
-
-				name = validName;
+				sendError("Parsing name failed.");
+				return;
 			}
 
 			TicketData ticketData;
@@ -722,8 +719,9 @@ static InitFunction initFunction([]()
 				trace("Something went wrong. Pool sizes increase may not be set.");
 			}
 
-			// Capture replaceExecutableVar just to prolong it's lifetime until connection is initialized.
+			// Capture replaceExecutableVar and defaultGameBuildVar just to prolong their lifetime until connection is initialized.
 			(void)replaceExecutableVar;
+			(void)defaultGameBuildVar;
 
 			{
 				auto oldClient = clientRegistry->GetClientByGuid(guid);
@@ -755,6 +753,7 @@ static InitFunction initFunction([]()
 			}
 
 			bool gameNameMatch = false;
+			bool serverIdMatch = false;
 
 			if (ticketData.extraJson)
 			{
@@ -771,6 +770,17 @@ static InitFunction initFunction([]()
 							gameNameMatch = true;
 						}
 					}
+
+					if (json["si"].is_string())
+					{
+						auto sentServerId = json["si"].get<std::string>();
+
+						auto serverIdVar = instance->GetComponent<console::Context>()->GetVariableManager()->FindEntryRaw("sv_serverId");
+						if (serverIdVar && sentServerId == serverIdVar->GetValue())
+						{
+							serverIdMatch = true;
+						}
+					}
 				}
 				catch (std::exception& e)
 				{
@@ -783,11 +793,18 @@ static InitFunction initFunction([]()
 			if (lanVar->GetValue())
 			{
 				gameNameMatch = true;
+				serverIdMatch = true;
 			}
 
 			if (!gameNameMatch)
 			{
 				sendError("CitizenFX ticket authorization failed. (3)");
+				return;
+			}
+
+			if (!serverIdMatch)
+			{
+				sendError("CitizenFX ticket authorization failed. (4)");
 				return;
 			}
 
@@ -886,6 +903,8 @@ static InitFunction initFunction([]()
 				int maxTrust = INT_MIN;
 				int minVariance = INT_MAX;
 
+				bool steamPresent = false;
+
 				for (const auto& identifier : lockedClient->GetIdentifiers())
 				{
 					std::string idType = identifier.substr(0, identifier.find_first_of(':'));
@@ -897,6 +916,23 @@ static InitFunction initFunction([]()
 						maxTrust = std::max(provider->GetTrustLevel(), maxTrust);
 						minVariance = std::min(provider->GetVarianceLevel(), minVariance);
 					}
+
+					if (idType == "steam")
+					{
+						steamPresent = true;
+					}
+				}
+
+				if (!steamPresent && g_enforceSteamAuth->GetValue())
+				{
+					sendError("No linked Steam account was found while this server requires one. Please try restarting your game.");
+					return;
+				}
+				else if (steamPresent)
+				{
+					// Ugly but lets not break legacy stuff.
+					maxTrust = std::max(5, maxTrust);
+					minVariance = std::min(1, minVariance);
 				}
 
 				if (maxTrust < minTrustVar->GetValue() || minVariance > maxVarianceVar->GetValue())
@@ -1020,7 +1056,7 @@ static InitFunction initFunction([]()
 				auto weakEarlyReject = std::weak_ptr(earlyReject);
 				auto weakNoReason = std::weak_ptr(noReason);
 
-				(*deferrals)->SetRejectCallback([deferrals, cbRef, clientWeak, weakEarlyReject, weakNoReason](const std::string& message)
+				(*deferrals)->SetRejectCallback([deferrals, cbRef, clientWeak, weakEarlyReject, weakNoReason](const std::string& message, const std::string& resourceName)
 				{
 					auto earlyReject = weakEarlyReject.lock();
 					auto noReason = weakNoReason.lock();
@@ -1034,6 +1070,23 @@ static InitFunction initFunction([]()
 					auto newLockedClient = clientWeak.lock();
 					if (newLockedClient)
 					{
+						std::string license;
+						for (const auto& identifier : newLockedClient->GetIdentifiers())
+						{
+							if (identifier.rfind("license:", 0) == 0)
+							{
+								license = identifier;
+								break;
+							}
+						}
+
+						StructuredTrace(
+							{ "type", "player_connection_rejected" },
+							{ "license", license },
+							{ "resource", resourceName },
+							{ "reason", message }
+						);
+
 						auto ref1 = *cbRef;
 
 						if (ref1)

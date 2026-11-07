@@ -1,7 +1,7 @@
 /*
- * This file is part of the CitizenFX project - http://citizen.re/
+ * This file is part of the Cfx project - https://cfx.re/
  *
- * See LICENSE and MENTIONS in the root of the source tree for information
+ * See LICENSE in the root of the source tree for information
  * regarding licensing.
  */
 
@@ -49,6 +49,7 @@ std::map<std::string, std::string> UpdateGameCache();
 std::map<std::string, std::string> g_redirectionData;
 
 void DoPreLaunchTasks();
+void EarlyLdrBlock_Init();
 void NVSP_DisableOnStartup();
 void XBR_EarlySelect();
 bool ExecutablePreload_Init();
@@ -100,6 +101,7 @@ HANDLE g_uiExitEvent;
 
 bool IsUnsafeGraphicsLibrary();
 void MigrateCacheFormat202105();
+void MigrateNUIProfileStorage();
 void UI_DestroyTen();
 
 HMODULE tlsDll;
@@ -128,6 +130,9 @@ void DLLError(DWORD errorCode, std::string_view dllName)
 int RealMain()
 {
 #ifdef LAUNCHER_PERSONALITY_MAIN
+	// block problematic DLLs as early as possible, before any D3D/UI initialization
+	EarlyLdrBlock_Init();
+
 	if (!EnsureCompatibleOSVersion())
 	{
 		return 100;
@@ -494,6 +499,7 @@ int RealMain()
 	if (initState->IsMasterProcess())
 	{
 		MigrateCacheFormat202105();
+		MigrateNUIProfileStorage();
 	}
 
 	if (InitializeExceptionHandler())
@@ -624,8 +630,6 @@ int RealMain()
 	LoadLibrary(MakeRelativeCitPath(L"v8_libbase.dll").c_str());
 	LoadLibrary(MakeRelativeCitPath(L"v8.dll").c_str());
 #endif
-
-	LoadLibrary(MakeRelativeCitPath(L"steam_api64.dll").c_str());
 
 	if (addDllDirectory)
 	{

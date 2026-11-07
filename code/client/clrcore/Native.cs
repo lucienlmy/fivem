@@ -25,6 +25,7 @@ namespace CitizenFX.Core.Native
 
 		private static unsafe object InvokeInternal(Hash nativeHash, Type returnType, InputArgument[] args)
 		{
+			PointerArgumentSafety.CheckArguments((ulong)nativeHash, args);
 			ScriptContext.Reset();
 
 			foreach (var arg in args)
@@ -369,6 +370,7 @@ namespace CitizenFX.Core.Native
 
     public class InputArgument
     {
+        private bool m_critical;
         protected object m_value;
 
         internal object Value => m_value;
@@ -381,6 +383,11 @@ namespace CitizenFX.Core.Native
         public override string ToString()
         {
             return m_value.ToString();
+        }
+
+        public bool IsCritical
+        {
+            get { return m_critical; }
         }
 
         public static implicit operator InputArgument(bool value)
@@ -467,13 +474,17 @@ namespace CitizenFX.Core.Native
         [SecurityCritical]
         public static implicit operator InputArgument(IntPtr value)
         {
-            return new InputArgument(value);
+            var arg = new InputArgument(value);
+            arg.m_critical = true;
+            return arg;
         }
 
         [SecurityCritical]
         public static unsafe implicit operator InputArgument(void* value)
         {
-            return new InputArgument(new IntPtr(value));
+            var arg = new InputArgument(new IntPtr(value));
+            arg.m_critical = true;
+            return arg;
         }
     }
 

@@ -1,7 +1,7 @@
 /*
- * This file is part of the CitizenFX project - http://citizen.re/
+ * This file is part of the Cfx project - https://cfx.re/
  *
- * See LICENSE and MENTIONS in the root of the source tree for information
+ * See LICENSE in the root of the source tree for information
  * regarding licensing.
  */
 
@@ -117,6 +117,13 @@ public:
 	// Registers a resource as subscribing to a particular event.
 	//
 	void AddResourceHandledEvent(const std::string& resourceName, const std::string& eventName);
+
+	//
+	// An event to observe which events resources subscribe to, so that expensive event sources
+	// can cache whether producing an event is worth it.
+	// Arguments: eventName, resourceName
+	//
+	fwEvent<const std::string&, const std::string&> OnResourceHandledEvent;
 
 	//
 	// An event to handle event execution externally.

@@ -1,7 +1,7 @@
 /*
- * This file is part of the CitizenFX project - http://citizen.re/
+ * This file is part of the Cfx project - https://cfx.re/
  *
- * See LICENSE and MENTIONS in the root of the source tree for information
+ * See LICENSE in the root of the source tree for information
  * regarding licensing.
  */
 
@@ -376,6 +376,6 @@ static InitFunction httpInitFunction([]()
 	nui::RequestNUIBlocklist.Connect([](std::function<void(bool, const char*, size_t)> cb)
 	{
 		auto httpClient = Instance<HttpClient>::Get();
-		httpClient->DoGetRequest("https://runtime.fivem.net/nui-blacklist.json", cb);
+		httpClient->DoGetRequest("https://gss.cfx-services.net/v1/public/filter-lists/nui-blocklist", cb);
 	});
 });

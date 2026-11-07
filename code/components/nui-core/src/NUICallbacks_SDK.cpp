@@ -1,7 +1,7 @@
 /*
- * This file is part of the CitizenFX project - http://citizen.re/
+ * This file is part of the Cfx project - https://cfx.re/
  *
- * See LICENSE and MENTIONS in the root of the source tree for information
+ * See LICENSE in the root of the source tree for information
  * regarding licensing.
  */
 
@@ -343,7 +343,7 @@ static InitFunction initFunction([]()
 			return CefV8Value::CreateUndefined();
 		}
 
-		const std::wstring text(arguments[0]->GetStringValue().c_str());
+		const std::wstring text((wchar_t*)(arguments[0]->GetStringValue().c_str()));
 		const size_t textSize = text.size() + 1;
 
 		if (OpenClipboard(nullptr))

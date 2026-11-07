@@ -1,7 +1,7 @@
 /*
- * This file is part of the CitizenFX project - http://citizen.re/
+ * This file is part of the Cfx project - https://cfx.re/
  *
- * See LICENSE and MENTIONS in the root of the source tree for information
+ * See LICENSE in the root of the source tree for information
  * regarding licensing.
  */
 
@@ -57,7 +57,6 @@
 #include "Error.h"
 
 #include "PacketHandler.h"
-#include "PaymentRequest.h"
 
 #include "LinkProtocolIPC.h"
 
@@ -104,18 +103,28 @@ static void SaveBuildNumber(uint32_t build)
 	}
 }
 
-static void SaveGameSettings(const std::wstring& poolIncreases, bool replaceExecutable)
+static void SaveGameSettings(const std::wstring& poolIncreases, int defaultBuild)
 {
 	std::wstring fpath = MakeRelativeCitPath(L"CitizenFX.ini");
 
 	if (GetFileAttributes(fpath.c_str()) != INVALID_FILE_ATTRIBUTES)
 	{
 		WritePrivateProfileString(L"Game", L"PoolSizesIncrease", poolIncreases.c_str(), fpath.c_str());
-		WritePrivateProfileString(L"Game", L"ReplaceExecutable", replaceExecutable ? L"1" : L"0", fpath.c_str());
+		WritePrivateProfileString(L"Game", L"DefaultBuild", fmt::sprintf(L"%d", defaultBuild).c_str(), fpath.c_str());
 	}
 }
 
-void RestartGameToOtherBuild(int build, int pureLevel, std::wstring poolSizesIncreaseSetting, bool replaceExecutable)
+static void SavePureLevel(int pureLevel)
+{
+	std::wstring fpath = MakeRelativeCitPath(L"CitizenFX.ini");
+
+	if (GetFileAttributes(fpath.c_str()) != INVALID_FILE_ATTRIBUTES)
+	{
+		WritePrivateProfileString(L"Game", L"PureLevel", fmt::sprintf(L"%d", pureLevel).c_str(), fpath.c_str());
+	}
+}
+
+void RestartGameToOtherBuild(int build, int pureLevel, std::wstring poolSizesIncreaseSetting, int defaultBuild)
 {
 #if defined(GTA_FIVE) || defined(IS_RDR3)
 	SECURITY_ATTRIBUTES securityAttributes = { 0 };
@@ -140,9 +149,10 @@ void RestartGameToOtherBuild(int build, int pureLevel, std::wstring poolSizesInc
 		SaveBuildNumber(xbr::GetDefaultGameBuild());
 	}
 
-	SaveGameSettings(poolSizesIncreaseSetting, replaceExecutable);
+	SaveGameSettings(poolSizesIncreaseSetting, defaultBuild);
+	SavePureLevel(pureLevel);
 
-	trace("Switching from build %d to build %d...\n", xbr::GetRequestedGameBuild(), build);
+	trace("Switching from build %d to build %d (exe %d)...\n", xbr::GetRequestedGameBuild(), build, defaultBuild);
 
 	SIZE_T size = 0;
 	InitializeProcThreadAttributeList(NULL, 1, 0, &size);
@@ -176,7 +186,7 @@ void RestartGameToOtherBuild(int build, int pureLevel, std::wstring poolSizesInc
 #endif
 }
 
-extern void InitializeBuildSwitch(int build, int pureLevel, std::wstring poolSizesIncreaseSetting, bool replaceExecutable);
+extern bool InitializeBuildSwitch(int build, int pureLevel, std::wstring poolSizesIncreaseSetting, int defaultBuild, bool skip);
 
 void saveSettings(const wchar_t *json) {
 	PWSTR appDataPath;
@@ -510,59 +520,6 @@ static void DisconnectCmd()
 
 extern void MarkNuiLoaded();
 
-static std::function<void()> g_onYesCallback;
-
-class PaymentRequestPacketHandler : public net::PacketHandler<net::packet::ServerPaymentRequest, HashRageString("msgPaymentRequest")>
-{
-public:
-	template<typename T>
-	bool Process(T& stream)
-	{
-		return ProcessPacket(stream, [](net::packet::ServerPaymentRequest& serverPaymentRequest)
-		{
-			try
-			{
-				auto json = nlohmann::json::parse(std::string(reinterpret_cast<const char*>(serverPaymentRequest.data.GetValue().data()), serverPaymentRequest.data.GetValue().size()));
-
-				se::ScopedPrincipal scope(se::Principal{ "system.console" });
-				console::GetDefaultContext()->GetVariableManager()->FindEntryRaw("warningMessageResult")->SetValue("0");
-				console::GetDefaultContext()->ExecuteSingleCommandDirect(ProgramArguments{ "warningmessage", "PURCHASE REQUEST", fmt::sprintf("The server is requesting a purchase of %s for %s.", json.value("sku_name", ""), json.value("sku_price", "")), "Do you want to purchase this item?", "20" });
-
-				g_onYesCallback = [json]()
-				{
-					std::map<std::string, std::string> postMap;
-					postMap["data"] = json.value<std::string>("data", "");
-					postMap["sig"] = json.value<std::string>("sig", "");
-					postMap["clientId"] = g_discourseClientId;
-					postMap["userToken"] = g_discourseUserToken;
-
-					Instance<HttpClient>::Get()->DoPostRequest("https://keymaster.fivem.net/api/paymentAssign", postMap, [](bool success, const char* data, size_t length)
-					{
-						if (success)
-						{
-							auto res = nlohmann::json::parse(std::string(data, length));
-							auto url = res.value("url", "");
-
-							if (!url.empty())
-							{
-								if (url.find("http://") == 0 || url.find("https://") == 0)
-								{
-									ShellExecute(nullptr, L"open", ToWide(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-								}
-							}
-						}
-					});
-				};
-			}
-			catch (const std::exception& e)
-			{
-
-			}
-		});
-	}
-};
-
-
 static InitFunction initFunction([] ()
 {
 	static std::function<void()> backfillDoneEvent;
@@ -578,18 +535,6 @@ static InitFunction initFunction([] ()
 
 	OnGameFrame.Connect([]()
 	{
-		static bool wasSteamInitialized = cfx::legitimacy::IsSteamInitializedWrapper();
-
-		if (wasSteamInitialized && !cfx::legitimacy::IsSteamRunning())
-		{
-			FatalError("Steam process has exited. The game will now close.");
-		}
-
-		if (!wasSteamInitialized && cfx::legitimacy::IsSteamInitializedWrapper())
-		{
-			wasSteamInitialized = true;
-		}
-
 		if (disconnect)
 		{
 			DisconnectCmd();
@@ -656,7 +601,7 @@ static InitFunction initFunction([] ()
 
 				auto outInfo = nlohmann::json::object({ { "icon", iconUri }, { "token", svLicenseKeyToken }, { "vars", info["vars"] } });
 				auto outData = nlohmann::json::object({ { "nonce", g_connectNonce }, { "server", outInfo } }).dump();
-
+					
 				nui::PostFrameMessage("mpMenu", fmt::sprintf(R"({ "type": "backfillServerInfo", "data": %s })", outData));
 				backfillDoneEvent = cb;
 			}
@@ -669,29 +614,19 @@ static InitFunction initFunction([] ()
 		netLibrary->OnConnectOKReceived.Connect([](NetAddress)
 		{
 			auto peerAddress = netLibrary->GetCurrentPeer().ToString();
-
-			nui::PostRootMessage(fmt::sprintf(R"({ "type": "setServerAddress", "data": "%s" })", peerAddress));
+			nui::SetServerAddress(peerAddress);
 		});
 
-		netLibrary->OnRequestBuildSwitch.Connect([](int build, int pureLevel, std::wstring poolSizesIncreaseSetting, bool replaceExecutable)
+		netLibrary->OnRequestBuildSwitch.Connect([](int build, int pureLevel, std::wstring poolSizesIncreaseSetting, int defaultBuild, bool skip)
 		{
-			InitializeBuildSwitch(build, pureLevel, std::move(poolSizesIncreaseSetting), replaceExecutable);
-			g_connected = false;
+			bool cancelled = InitializeBuildSwitch(build, pureLevel, std::move(poolSizesIncreaseSetting), defaultBuild, skip);
+			g_connected = !cancelled;
+			return cancelled;
 		});
 
 		netLibrary->OnConnectionErrorRichEvent.Connect([] (const std::string& errorOrig, const std::string& metaData)
 		{
 			std::string error = errorOrig;
-
-			if ((strstr(error.c_str(), "steam") || strstr(error.c_str(), "Steam")) && !strstr(error.c_str(), ".ms/verify"))
-			{
-				auto steamID = cfx::legitimacy::GetSteamIdAsIntWrapper();
-
-				if ((steamID & 0xFFFFFFFF00000000) != 0)
-				{
-					error += "\nThis is a Steam authentication failure, but you are running Steam and it is signed in. The server owner can find more information in their server console.";
-				}
-			}
 
 			console::Printf("no_console", "OnConnectionError: %s\n", error);
 
@@ -804,26 +739,6 @@ static InitFunction initFunction([] ()
 				ep.Call("unloaded");
 			}
 		}, 5000);
-
-		lib->AddPacketHandler<PaymentRequestPacketHandler>(true);
-	});
-
-	OnMainGameFrame.Connect([]()
-	{
-		if (g_onYesCallback)
-		{
-			int result = atoi(console::GetDefaultContext()->GetVariableManager()->FindEntryRaw("warningMessageResult")->GetValue().c_str());
-
-			if (result != 0)
-			{
-				if (result == 4)
-				{
-					g_onYesCallback();
-				}
-
-				g_onYesCallback = {};
-			}
-		}
 	});
 
 	OnKillNetwork.Connect([](const char*)
@@ -1314,6 +1229,10 @@ static InitFunction initFunction([] ()
 			{
 				trace("failed to set last servers: %s\n", e.what());
 			}
+		}
+		else if (!_wcsicmp(type, L"refreshIdentities"))
+		{
+			cfx::legitimacy::RefreshIdentities();
 		}
 	});
 

@@ -10,6 +10,8 @@
 
 #if defined(LAUNCHER_PERSONALITY_MAIN)
 #include <CfxLocale.h>
+#include <winternl.h>
+#include <MinHook.h>
 #endif
 
 #pragma comment(lib, "d3d11.lib")
@@ -153,6 +155,33 @@ void DoPreLaunchTasks()
 	}
 }
 
+#if defined(LAUNCHER_PERSONALITY_MAIN)
+static NTSTATUS(NTAPI* g_earlyOrigLoadDll)(const wchar_t*, uint32_t*, UNICODE_STRING*, HANDLE*);
+
+static NTSTATUS NTAPI EarlyLdrLoadDllStub(const wchar_t* fileName, uint32_t* flags, UNICODE_STRING* moduleName, HANDLE* handle)
+{
+	std::wstring moduleNameStr(moduleName->Buffer, moduleName->Length / sizeof(wchar_t));
+	std::transform(moduleNameStr.begin(), moduleNameStr.end(), moduleNameStr.begin(), ::tolower);
+
+	if (
+		// NVIDIA Game Filter/Freestyle post-processing DLL, crashes on startup due to incompatible D3D hooks
+		moduleNameStr.find(L"nvppex") != std::string::npos
+	)
+	{
+		return 0xC0000428;
+	}
+
+	return g_earlyOrigLoadDll(fileName, flags, moduleName, handle);
+}
+
+void EarlyLdrBlock_Init()
+{
+	MH_Initialize();
+	MH_CreateHookApi(L"ntdll.dll", "LdrLoadDll", EarlyLdrLoadDllStub, (void**)&g_earlyOrigLoadDll);
+	MH_EnableHook(MH_ALL_HOOKS);
+}
+#endif
+
 void MigrateCacheFormat202105()
 {
 	// execute the big cache emigration
@@ -199,5 +228,128 @@ void MigrateCacheFormat202105()
 
 			FindClose(hFind);
 		}
+	}
+}
+
+#include <filesystem>
+
+void MigrateNUIProfileStorage()
+{
+	namespace fs = std::filesystem;
+	std::error_code ec;
+
+	fs::path root((std::wstring)MakeRelativeCitPath(L"data/nui-storage"));
+	fs::path defaultPath = root / L"Default";
+	fs::path localPrefs = root / L"LocalPrefs.json";
+
+	if (fs::exists(root / ".cfx_profile_migration", ec))
+	{
+		// Caches from M103 were migrated accidently.
+		// This could enable weird behaviour and instability.
+		if (fs::exists(localPrefs, ec) && !fs::exists(root / ".cfx_cache_removal", ec))
+		{
+			const std::wstring staleDirs[] = {
+				L"Code Cache",
+				L"GPUCache",
+				L"DawnGraphiteCache",
+				L"DawnWebGPUCache",
+				L"GrShaderCache",
+				L"ShaderCache",
+				L"GraphiteDawnCache",
+			};
+
+			for (const auto& dir : staleDirs)
+			{
+				fs::remove_all(root / dir, ec);
+				fs::remove_all(defaultPath / dir, ec);
+			}
+
+			FILE* f = _wfopen(MakeRelativeCitPath("data\\nui-storage\\.cfx_cache_removal").c_str(), L"wb");
+			if (f)
+			{
+				fclose(f);
+			}
+		}
+		return;
+	}
+
+	if (!fs::exists(localPrefs, ec))
+	{
+		return;
+	}
+
+	try
+	{
+		// Use Local Storage or as a marker for a used install
+		// Even if .cfx_profile_migration is accidently removed.
+		if (fs::exists(defaultPath / L"Local Storage", ec) ||
+			fs::exists(defaultPath / L"IndexedDB", ec))
+		{
+			FILE* f = _wfopen(MakeRelativeCitPath("data\\nui-storage\\.cfx_profile_migration").c_str(), L"wb");
+			if (f)
+			{
+				fclose(f);
+			}
+			return;
+		}
+
+		// LocalPrefs.json from M103 is required decrypting cookie information.
+		fs::path localState = root / L"Local State";
+		if (fs::exists(localPrefs) && !fs::exists(localState))
+		{
+			fs::copy_file(localPrefs, localState, fs::copy_options::overwrite_existing);
+		}
+
+		if (fs::exists(defaultPath))
+		{
+			fs::remove_all(defaultPath);
+		}
+
+		fs::create_directories(defaultPath);
+
+		const std::wstring files[] = {
+			L"Visited Links"
+		};
+
+		for (const auto& file : files)
+		{
+			fs::path src = root / file;
+			fs::path dst = defaultPath / file;
+
+			if (fs::exists(src) && !fs::exists(dst))
+			{
+				fs::copy_file(src, dst, fs::copy_options::overwrite_existing);
+			}
+		}
+
+		const std::wstring dirs[] = {
+			L"Local Storage",
+			L"Network",
+			L"Session Storage",
+			L"IndexedDB"
+		};
+
+		for (const auto& dir : dirs)
+		{
+			fs::path src = root / dir;
+			fs::path dst = defaultPath / dir;
+
+			if (fs::exists(src))
+			{
+				fs::create_directories(dst.parent_path());
+				fs::copy(src, dst, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+			}
+		}
+	}
+	catch (const std::exception& e)
+	{
+		trace("Unable to migrate nui-storage profile %s.\n", e.what());
+		return;
+	}
+
+	FILE* f = _wfopen(MakeRelativeCitPath("data\\nui-storage\\.cfx_profile_migration").c_str(), L"wb");
+	if (f)
+	{
+		fclose(f);
 	}
 }

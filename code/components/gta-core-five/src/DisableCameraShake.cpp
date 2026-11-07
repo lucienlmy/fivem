@@ -1,7 +1,7 @@
 /*
- * This file is part of the CitizenFX project - http://citizen.re/
+ * This file is part of the Cfx project - https://cfx.re/
  *
- * See LICENSE and MENTIONS in the root of the source tree for information
+ * See LICENSE in the root of the source tree for information
  * regarding licensing.
  */
 
@@ -33,7 +33,7 @@ static void UpdateCameraPedRunningShake(void* a1, void* a2, void* a3)
 
 static InitFunction initFunction([]()
 {
-	static ConVar<bool> disableCameraShakeVar("cam_disableCameraShake", ConVar_Archive | ConVar_UserPref, false, &g_disableCameraShake);
+	static ConVar<bool> disableCameraShakeVar("cam_disableCameraShake", ConVar_Archive, false, &g_disableCameraShake);
 });
 
 static HookFunction hookFunction([]

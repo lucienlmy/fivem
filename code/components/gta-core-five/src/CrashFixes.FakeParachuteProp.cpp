@@ -16,6 +16,7 @@ uint32_t dynamicEntityComponentOffset = 0;
 uint32_t animDirectorOffset = 0;
 std::once_flag traceOnceFlag;
 std::once_flag traceOnceFlag2;
+std::once_flag traceOnceFlag3;
 
 uint32_t parachuteObjectOffset = 0;
 uint32_t drawHandlerOffset = 0;
@@ -24,6 +25,21 @@ uint32_t taskTakeOffPedVariationPropOffset = 0;
 
 std::unordered_set<uint32_t> g_ParachuteModelWhitelist;
 std::unordered_set<uint32_t> g_ParachutePackModelWhitelist;
+
+bool IsParachuteEntityObject(hook::FlexStruct* entity)
+{
+	if (entity && entity->Get<uint8_t>(0x28) != 5)
+	{
+		std::call_once(traceOnceFlag3, []()
+		{
+			trace("Fake parachute object crash prevented: entity is not a CObject\n");
+		});
+
+		return false;
+	}
+
+	return true;
+}
 
 template<bool UseTaskPropEntity>
 bool IsTaskFSMEntityAnimDirectorValid(hook::FlexStruct* self)
@@ -34,6 +50,14 @@ bool IsTaskFSMEntityAnimDirectorValid(hook::FlexStruct* self)
 	// as entity creation might be deferred for tasks such as CTaskParachuteObject
 	if (taskEntity)
 	{
+		if constexpr (!UseTaskPropEntity)
+		{
+			if (!IsParachuteEntityObject(taskEntity))
+			{
+				return false;
+			}
+		}
+
 		hook::FlexStruct* dynamicEntityComponent = taskEntity->Get<hook::FlexStruct*>(dynamicEntityComponentOffset);
 
 		if (!dynamicEntityComponent)
@@ -278,18 +302,18 @@ static HookFunction hookFunction([]
 			ResetWhitelists();
 		});
 	}
+	
+	g_CTaskParachuteObject_UpdateFSM = hook::trampoline(hook::get_pattern<void>("48 83 EC ? 85 D2 0F 88 ? ? ? ? 75 ? 45 85 C0 75 ? 48 8B 41"), &CTaskParachuteObject_UpdateFSM);
+	taskEntityOffset = *hook::get_pattern<uint8_t>("48 8B 79 ? 48 8B F1 48 85 FF 74 ? 0F BE 41", 3);
+	dynamicEntityComponentOffset = *hook::get_pattern<uint8_t>("48 8B 43 ? 48 85 C0 74 ? 48 8B 78 ? 48 8B CF E8 ? ? ? ? 48 8B D5", 3);
+	animDirectorOffset = *hook::get_pattern<uint8_t>("48 8B 78 ? 48 8B CF E8 ? ? ? ? 48 8B D5", 3);
 
 	if (xbr::IsGameBuildOrGreater<3407>())
 	{
 		return;
 	}
 
-	g_CTaskParachuteObject_UpdateFSM = hook::trampoline(hook::get_pattern<void>("48 83 EC ? 85 D2 0F 88 ? ? ? ? 75 ? 45 85 C0 75 ? 48 8B 41"), &CTaskParachuteObject_UpdateFSM);
 	g_CTaskParachute_SetParachuteTintIndex = hook::trampoline(hook::get_pattern<void>("48 89 5C 24 ? 57 48 83 EC ? 48 8B 81 ? ? ? ? 48 8B D9 48 85 C0 74 ? 48 8B 40"), &CTaskParachute_SetParachuteTintIndex);
-
-	taskEntityOffset = *hook::get_pattern<uint8_t>("48 8B 5E ? 4C 8D 05", 3);
-	dynamicEntityComponentOffset = *hook::get_pattern<uint8_t>("48 8B 43 ? 48 85 C0 74 ? 48 8B 78 ? 48 8B CF E8 ? ? ? ? 48 8B D5", 3);
-	animDirectorOffset = *hook::get_pattern<uint8_t>("48 8B 78 ? 48 8B CF E8 ? ? ? ? 48 8B D5", 3);
 
 	parachuteObjectOffset = *hook::get_pattern<uint32_t>("48 8B 81 ? ? ? ? 48 8B D9 48 85 C0 74 ? 48 8B 40 ? 48 8B 78", 3);
 	drawHandlerOffset = *hook::get_pattern<uint8_t>("48 8B 40 ? 48 8B 78", 3);

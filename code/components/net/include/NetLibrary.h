@@ -1,7 +1,7 @@
 /*
- * This file is part of the CitizenFX project - http://citizen.re/
+ * This file is part of the Cfx project - https://cfx.re/
  *
- * See LICENSE and MENTIONS in the root of the source tree for information
+ * See LICENSE in the root of the source tree for information
  * regarding licensing.
  */
 
@@ -410,7 +410,7 @@ public:
 #endif
 		fwEvent<NetLibrary*> OnNetLibraryCreate;
 
-	fwEvent<int /* build */, int /* pure level */, std::wstring /* pool sizes increase request settings */, bool /* replace executable when enforcing game build */> OnRequestBuildSwitch;
+	fwEvent<int /* build */, int /* pure level */, std::wstring /* pool sizes increase request settings */, int /* default game build (exe) */, bool /* skip change accept */> OnRequestBuildSwitch;
 
 	fwEvent<const char*> OnAttemptDisconnect;
 
@@ -451,7 +451,7 @@ public:
 
 	// same as the other routine, except it's for authentication
 	// a2 -> license key token
-	fwEvent<const std::string&, const std::string&, const std::function<void(bool success, const std::map<std::string, std::string>& additionalPostData)>&> OnInterceptConnectionForAuth;
+	fwEvent<const std::string&, const std::string&, const std::string&, const std::function<void(bool success, const std::map<std::string, std::string>& additionalPostData)>&> OnInterceptConnectionForAuth;
 
 	// event to intercept server events for debugging
 	// a1: event name

@@ -1,7 +1,7 @@
 /*
- * This file is part of the CitizenFX project - http://citizen.re/
+ * This file is part of the Cfx project - https://cfx.re/
  *
- * See LICENSE and MENTIONS in the root of the source tree for information
+ * See LICENSE in the root of the source tree for information
  * regarding licensing.
  */
 
@@ -49,12 +49,12 @@ class FeatureStorage : private Traits
 public:
 	static constexpr auto GetStage()
 	{
-		return kStage;
+		return Traits::kStage;
 	}
 
 	static constexpr auto GetId()
 	{
-		return kId;
+		return Traits::kId;
 	}
 
 	auto& GetFeatureStateCache()
@@ -317,8 +317,9 @@ namespace nui
 			}
 			else
 			{
+				bool useRoot = (type == "rootCall" || type == "setHandoverData" || type == "setServerAddress");
 				std::unique_lock _(g_processMessageQueueMutex);
-				g_processMessageQueue[(type != "rootCall") ? processMessage->GetArgumentList()->GetString(0) : "__root"].push_back(processMessage);
+				g_processMessageQueue[useRoot ? "__root" : argumentList->GetString(0)].push_back(processMessage);
 			}
 		});
 
@@ -328,6 +329,16 @@ namespace nui
 	__declspec(dllexport) void PostRootMessage(const std::string& jsonData)
 	{
 		PostJSEvent("rootCall", { jsonData });
+	}
+
+	__declspec(dllexport) void SetHandoverData(const std::string& jsonData)
+	{
+		PostJSEvent("setHandoverData", { jsonData });
+	}
+
+	__declspec(dllexport) void SetServerAddress(const std::string& serverAddress)
+	{
+		PostJSEvent("setServerAddress", { serverAddress });
 	}
 
 	DLL_EXPORT void PostFrameMessage(const std::string& frame, const std::string& jsonData)
@@ -437,7 +448,6 @@ namespace nui
 		std::unique_lock<std::shared_mutex> lock(windowListMutex);
 
 		auto windowIt = windowList.find(windowName);
-
 		if (windowIt != windowList.end())
 		{
 			Instance<NUIWindowManager>::Get()->RemoveWindow(windowIt->second.GetRef());
@@ -567,15 +577,13 @@ namespace nui
 
 	__declspec(dllexport) void DestroyFrame(const std::string& frameName)
 	{
-		if (frameName == "mpMenu" && Feature_TopLevelMPMenu::RunIfEnabled([&frameName]
+		if (frameName == "mpMenu")
 		{
 			auto winName = fmt::sprintf("nui_%s", frameName);
 			DestroyNUIWindow(winName);
 
 			std::unique_lock<std::shared_mutex> lock(frameListMutex);
 			frameList.erase(frameName);
-		}))
-		{
 			return;
 		}
 
@@ -639,6 +647,7 @@ namespace nui
 	__declspec(dllexport) void SignalPoll(fwString frameName)
 	{
 		auto rootWindow = Instance<NUIWindowManager>::Get()->GetRootWindow();
-		rootWindow->SignalPoll(std::string(frameName.c_str()));
+		std::string frame = frameName.c_str();
+		rootWindow->SignalPoll(frame);
 	}
 }

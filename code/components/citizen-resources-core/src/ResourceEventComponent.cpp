@@ -1,7 +1,7 @@
 /*
- * This file is part of the CitizenFX project - http://citizen.re/
+ * This file is part of the Cfx project - https://cfx.re/
  *
- * See LICENSE and MENTIONS in the root of the source tree for information
+ * See LICENSE in the root of the source tree for information
  * regarding licensing.
  */
 
@@ -177,7 +177,10 @@ void ResourceEventManagerComponent::AddResourceHandledEvent(const std::string& r
 	}
 
 	m_eventResources.emplace(eventName, resourceName);
+
+	OnResourceHandledEvent(eventName, resourceName);
 }
+
 
 bool ResourceEventManagerComponent::TriggerEvent(const std::string& eventName, const std::string& eventPayload, const std::string& eventSource /* = std::string() */, ResourceEventComponent* filter /* = nullptr*/)
 {

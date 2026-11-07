@@ -1,7 +1,7 @@
 /*
- * This file is part of the CitizenFX project - http://citizen.re/
+ * This file is part of the Cfx project - https://cfx.re/
  *
- * See LICENSE and MENTIONS in the root of the source tree for information
+ * See LICENSE in the root of the source tree for information
  * regarding licensing.
  */
 
@@ -60,6 +60,11 @@ static bool IsUrlTrusted(const std::string& url)
 	{
 		return static_cast<char>(std::tolower(c));
 	});
+
+	if (host == "forum.cfx.re" && parsed->pathname().find("/uploads/") == 0)
+	{
+		return false;
+	}
 
 	// Check untrusted subdomains first
 	for (const auto& untrusted : untrustedSubdomains)
@@ -128,12 +133,12 @@ static InitFunction initFunction([] ()
 
 	NUIClient::OnClientCreated.Connect([] (NUIClient* client)
 	{
-		client->AddProcessMessageHandler("invokeNative", [client] (CefRefPtr<CefBrowser> browser, CefRefPtr<CefProcessMessage> message)
+		client->AddProcessMessageHandler("invokeNative", [client](CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, CefRefPtr<CefProcessMessage> message)
 		{
 			auto args = message->GetArgumentList();
 			auto nativeType = args->GetString(0);
 
-			nui::OnInvokeNative(nativeType.c_str(), ToWide(args->GetString(1).ToString()).c_str());
+			nui::OnInvokeNative((wchar_t*)nativeType.c_str(), ToWide(args->GetString(1).ToString()).c_str());
 
 			if (nativeType == "quit")
 			{

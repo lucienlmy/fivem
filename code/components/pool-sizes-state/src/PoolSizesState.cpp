@@ -1,7 +1,7 @@
 /*
- * This file is part of the CitizenFX project - http://citizen.re/
+ * This file is part of the Cfx project - https://cfx.re/
  *
- * See LICENSE and MENTIONS in the root of the source tree for information
+ * See LICENSE in the root of the source tree for information
  * regarding licensing.
  */
 
@@ -178,9 +178,9 @@ namespace fx
 static InitFunction initFunction([]()
 {
 #ifdef GTA_FIVE
-	std::string limitsFileUrl = "https://gss.cfx-services.net/v1/pool-size-limits/fivem";
+	std::string limitsFileUrl = "https://gss.cfx-services.net/v1/public/pool-size-limits/fivem";
 #else
-	std::string limitsFileUrl = "https://gss.cfx-services.net/v1/pool-size-limits/redm";
+	std::string limitsFileUrl = "https://gss.cfx-services.net/v1/public/pool-size-limits/redm";
 #endif
 	fx::PoolSizeManager::FetchLimits(limitsFileUrl);
 	fx::PoolSizeManager::FetchIncreaseRequest();
